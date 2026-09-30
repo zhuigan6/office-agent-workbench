@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "aionui": {"version": "2.2.2", "commit": "6744099b279b991c17e31c243f0920477bd31cb6", "role": "UI integration reference; renderer not vendored in first vertical slice"},
+  "aioncore": {"version": "0.2.2", "commit": "47e66d0d151123e973b3fd1e77afcb5671b3f8c5", "archiveSha256": "d1ed8d1da869230c18701747d07e8f068db5b8c9442e65261304aeb4c27eacf6", "binarySha256": "67eb02774bab3855b759ec9756c2e540cd17b64b850407fa4b8bad07fd8a0892", "asset": "aioncore-v0.2.2-x86_64-pc-windows-msvc.zip", "release": "https://github.com/iOfficeAI/AionCore/releases/tag/v0.2.2"},
+  "officecli": {"version": "1.0.152", "commit": "ffa8a0afbe2e9686abd636368e3da38c50f22131", "binarySha256": "047705402974c3690a4437e55f620d03afac4beba4fdd28fdb59af610a3afff2", "asset": "officecli-win-x64.exe", "release": "https://github.com/iOfficeAI/OfficeCLI/releases/tag/v1.0.152"}
+}

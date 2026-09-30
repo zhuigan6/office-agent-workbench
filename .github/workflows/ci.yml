@@ -1,0 +1,64 @@
+name: Workbench verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.14.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Download and verify original document engine
+        run: |
+          $ErrorActionPreference='Stop'
+          $lock=Get-Content upstreams.lock.json -Raw | ConvertFrom-Json
+          $dir=Join-Path $PWD '.local/ci-runtime'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $file=Join-Path $dir 'officecli.exe'
+          $url=$lock.officecli.release.Replace('/tag/','/download/')+'/'+$lock.officecli.asset
+          Invoke-WebRequest -Uri $url -OutFile $file
+          if((Get-FileHash -LiteralPath $file).Hash.ToLowerInvariant() -cne $lock.officecli.binarySha256){throw 'OfficeCLI integrity failure'}
+          "WORKBENCH_OFFICECLI=$file" >> $env:GITHUB_ENV
+      - name: Real engine complex document tests
+        run: node --import tsx scripts/Verify-ComplexDocuments.ts
+      - name: Original engine template merge tests
+        run: node --import tsx scripts/Verify-Templates.ts
+      - name: CSV TSV and legacy dump compatibility
+        run: node --import tsx scripts/Verify-DataImport.ts
+      - name: Preserve synthetic acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: synthetic-document-acceptance
+          path: |
+            .local/verification/complex-*/complex.docx
+            .local/verification/complex-*/complex.xlsx
+            .local/verification/complex-*/complex.pptx
+            .local/verification/complex-*/report.json
+            .local/verification/templates-*/merged.docx
+            .local/verification/templates-*/merged.xlsx
+            .local/verification/templates-*/merged.pptx
+            .local/verification/templates-*/report.json
+            .local/verification/data-import-*/report.json
+          if-no-files-found: ignore
+          retention-days: 7

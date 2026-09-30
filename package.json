@@ -1,0 +1,38 @@
+{
+  "name": "office-agent-workbench",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "start": "tsx apps/local-host/main.ts",
+    "mcp": "tsx apps/local-host/mcp.ts",
+    "cli": "tsx apps/cli/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.1",
+    "fflate": "0.8.3",
+    "pdfjs-dist": "6.3.289",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "ws": "8.22.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.1",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "@types/ws": "8.18.1",
+    "playwright": "1.58.2",
+    "tsx": "4.23.15",
+    "typescript": "5.8.3",
+    "vite": "6.4.3"
+  }
+}
