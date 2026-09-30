@@ -31,7 +31,7 @@ function Assert-Throws([scriptblock]$Action) {
   try { & $Action | Out-Null } catch { $threw = $true }
   Assert $threw 'Expected refusal'
 }
-${body}
+${body.replaceAll('E:\\Workbench', path.parse(process.env.SystemRoot || 'C:\\Windows').root + 'Workbench').replaceAll('E:\\Other', path.parse(process.env.SystemRoot || 'C:\\Windows').root + 'Other')}
 `;
   const result = spawnSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
     ['-NoProfile', '-NonInteractive', '-Command', code], { encoding: 'utf8', windowsHide: true, timeout: 30_000 });

@@ -49,7 +49,7 @@ export class CodexRpc extends EventEmitter {
     this.initializing = true;
     try {
     const result = await this.request('initialize', {
-      clientInfo: { name: 'office_agent_workbench', title: 'Office Agent Workbench', version: '0.1.0-alpha.1' },
+      clientInfo: { name: 'office_agent_workbench', title: 'Office Agent Workbench', version: '0.1.0-alpha.2' },
       capabilities: { experimentalApi: true },
     });
     this.notify('initialized', {}); this.ready = true; return result;

@@ -104,7 +104,7 @@ const server=https.createServer({pfx:fs.readFileSync(path.join(local,'server.pfx
     if(req.headers.origin&&req.headers.origin!==origin)throw new AppError('ORIGIN_REJECTED','Unrecognized origin.',403);
     const url=new URL(req.url || '/',origin),method=req.method || 'GET';let route=url.pathname;
     res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
-    if(route==='/health'){json(res,{status:coreReady?'ok':'starting',mode:'standalone',version:'0.1.0-alpha.1',coreReady,pid:process.pid});return;}
+    if(route==='/health'){json(res,{status:coreReady?'ok':'starting',mode:'standalone',version:'0.1.0-alpha.2',coreReady,pid:process.pid});return;}
     if(route.startsWith('/api/')||route.startsWith('/tools/')){
       const auth=authenticate(req);
       if(auth.role==='tool'){
@@ -170,7 +170,7 @@ const server=https.createServer({pfx:fs.readFileSync(path.join(local,'server.pfx
       }
       if(route==='/api/status'){
         let gateway:any={};try{gateway=await(await fetch(config.gatewayUrl+'/healthz',{signal:AbortSignal.timeout(2000)})).json();}catch{}
-        json(res,{version:'0.1.0-alpha.1',mode:'standalone',coreReady,nativeError,selectionPreview:true,certificate:certificateMaintenance(certificateValidTo),connectionSource:config.connectionSource,provider:gateway.active_provider || 'Unknown',model:config.model,
+        json(res,{version:'0.1.0-alpha.2',mode:'standalone',coreReady,nativeError,selectionPreview:true,certificate:certificateMaintenance(certificateValidTo),connectionSource:config.connectionSource,provider:gateway.active_provider || 'Unknown',model:config.model,
           documents:store.documents().map(d=>({...d,online:broker.hosts.has(d.documentId)}))});return;
       }
       if(route==='/api/native-sessions'&&method==='GET'){json(res,nativeSessions.list(Number(url.searchParams.get('after')??'0')));return;}

@@ -23,7 +23,7 @@ const result=async(route:string,args:unknown)=>{
   try{return {content:[{type:'text' as const,text:JSON.stringify(await invoke(route,args))}]};}
   catch(error){return {isError:true,content:[{type:'text' as const,text:error instanceof Error?error.message:String(error)}]};}
 };
-const server=new McpServer({name:'office-workbench',version:'0.1.0-alpha.1'});
+const server=new McpServer({name:'office-workbench',version:'0.1.0-alpha.2'});
 let scope:{kind:string;capabilities:string[]};
 try{scope=await invoke('/tools/capabilities',{}) as typeof scope;}
 catch(error){

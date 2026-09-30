@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.2 - 2026-09-30
+
+- First published preview; alpha.1 was an unpublished release candidate.
+- Fix service-test fixtures to use the Windows system drive, not a required E drive.
+- Include the read-only Office discovery script in source and package exports.
+
 ## 0.1.0-alpha.1 - 2026-09-30
 
 First public Windows x64 preview of Office Agent Workbench.

@@ -1,6 +1,6 @@
 # Office Agent Workbench
 
-本地 Office 智能体工作台，首个公开预览版为 **0.1.0-alpha.1**。这是有明确边界的可试用版本，不是全功能正式版。
+本地 Office 智能体工作台，首个公开预览版为 **0.1.0-alpha.2**。这是有明确边界的可试用版本，不是全功能正式版。
 
 下载与安装见 [GitHub Releases](https://github.com/zhuigan6/office-agent-workbench/releases) 和 [安装说明](docs/INSTALLATION.md)。本次发布范围与第二版计划见 [发布范围](docs/RELEASE-SCOPE.md)。
 

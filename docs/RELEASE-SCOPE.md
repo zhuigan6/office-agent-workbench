@@ -1,4 +1,4 @@
-# First public preview: 0.1.0-alpha.1
+# First public preview: 0.1.0-alpha.2
 
 ## Scope decision, 2026-09-30
 
