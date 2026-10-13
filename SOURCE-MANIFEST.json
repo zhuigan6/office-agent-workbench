@@ -3,7 +3,7 @@
   "files": {
     ".github/workflows/checkpoint-assets.yml": "04775751664bb3b46634837db543235f6c27f36f63b9dde83d30a635d897f2f4",
     ".github/workflows/ci.yml": "c885083eb0050ef985a260c65473a59fefce181ef1e8750c7a5974df6e9e1a5c",
-    ".github/workflows/verify-release.yml": "597c9e3aee195810be422262bdb102df92086458ac4eaac40cc41e8b65695b72",
+    ".github/workflows/verify-release.yml": "a1f151862f25600a5a529dda43e54a0ced74d6977d7f98e98446d7367e65b3da",
     ".gitignore": "71dcc4a44c81593971c3d554ea3e37f7b1d107a5502154255c2a4bc9541c3ff6",
     "apps/cli/commands.ts": "806821aaf6690df8feeb5e26b49d33173da049e050047dbc141bdb75a195ee52",
     "apps/cli/main.ts": "90fecf51be6da2935429b9e08e096e3ee3cf4df41a1694f515028d0075621ee2",

@@ -34,7 +34,9 @@ jobs:
           if($release.draft -or $release.tag_name -cne $env:RELEASE_TAG){throw 'Public release identity mismatch'}
           $asset=@($release.assets | Where-Object name -eq $name)
           if($asset.Count -ne 1 -or $asset[0].digest -cne ('sha256:'+$env:RELEASE_SHA256)){throw 'Published asset digest mismatch'}
-          $sums=(Invoke-WebRequest ($origin+'SHA256SUMS.txt')).Content
+          $sumsFile=Join-Path $env:RUNNER_TEMP 'SHA256SUMS.txt'
+          Invoke-WebRequest ($origin+'SHA256SUMS.txt') -OutFile $sumsFile
+          $sums=Get-Content -LiteralPath $sumsFile -Raw -Encoding ascii
           $lines=@(($sums -split "`n") | Where-Object {$_ -match ('^[a-f0-9]{64}\s+'+[regex]::Escape($name)+'\s*$')})
           if($lines.Count -ne 1 -or ($lines[0] -split '\s+')[0] -cne $env:RELEASE_SHA256){throw 'Public checksum file mismatch'}
           $zip=Join-Path $env:RUNNER_TEMP $name
