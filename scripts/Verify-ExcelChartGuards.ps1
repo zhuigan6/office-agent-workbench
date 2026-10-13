@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$Directory)
 $ErrorActionPreference='Stop'
+$Directory=[IO.Path]::GetFullPath($Directory)
 . (Join-Path $PSScriptRoot '../packages/native-office/excel-chart-format.ps1')
 . (Join-Path $PSScriptRoot '../packages/native-office/excel-chart-package.ps1')
 $env:WORKBENCH_NATIVE_SNAPSHOTS=$Directory

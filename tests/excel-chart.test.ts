@@ -21,9 +21,11 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {NativeLayoutSummary} from '../apps/workbench/src/NativeOperationView.tsx';
 import {writeToolResult} from '../packages/contracts/tool-results.ts';
 test('native chart recovery validates template bytes without optional cmdlets and preserves meaningful color maps',{skip:process.platform!=='win32'},()=>{
-  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'workbench-chart-guards-'));
-  const r=spawnSync(path.join(process.env.SystemRoot!,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-STA','-File',fileURLToPath(new URL('../scripts/Verify-ExcelChartGuards.ps1',import.meta.url)),'-Directory',directory],{encoding:'utf8',windowsHide:true,timeout:15000});
-  assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/EXCEL_CHART_ASSET_AND_COLOR_GUARDS=PASS/);
+  for(const suffix of ['',path.sep+'.']){
+    const directory=fs.mkdtempSync(path.join(os.tmpdir(),'workbench-chart-guards-'))+suffix;
+    const r=spawnSync(path.join(process.env.SystemRoot!,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-STA','-File',fileURLToPath(new URL('../scripts/Verify-ExcelChartGuards.ps1',import.meta.url)),'-Directory',directory],{encoding:'utf8',windowsHide:true,timeout:15000});
+    assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/EXCEL_CHART_ASSET_AND_COLOR_GUARDS=PASS/);
+  }
 });
 test('native chart component capture cannot silently expand to whole-chart authority',{skip:process.platform!=='win32'},()=>{
   const r=spawnSync(path.join(process.env.SystemRoot!,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-STA','-File',fileURLToPath(new URL('../scripts/Verify-ExcelChartScope.ps1',import.meta.url))],{encoding:'utf8',windowsHide:true,timeout:15000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/EXCEL_CHART_SELECTION_SCOPE=PASS/);
