@@ -19,7 +19,7 @@ Private chronological logs and raw chat/document fixtures are not distributed.
 
 ## Evidence And Corrections
 
-- Source regression last recorded391 tests, typecheck and build. The release
+- Source and assembled package each passed391 regression tests and typecheck; source build passed. The release
   preparation must independently verify clean export and assembled package;
   green source checks alone do not prove either distribution or real Office.
 - Real dedicated native Office and model/approval/recovery workflows were exercised.
