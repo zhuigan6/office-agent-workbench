@@ -46,6 +46,9 @@ jobs:
           Expand-Archive -LiteralPath $zip -DestinationPath $root
           $pkg=Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json
           if(('v'+$pkg.version) -cne $env:RELEASE_TAG){throw 'Downloaded package version mismatch'}
-          & (Join-Path $root 'runtime/node/node.exe') --import tsx (Join-Path $root 'scripts/Manage-Package.ts') verify $root
-          if($LASTEXITCODE -ne 0){throw 'Extracted file integrity mismatch'}
+          Push-Location $root
+          try{
+            & .\runtime\node\node.exe --import tsx scripts/Manage-Package.ts verify .
+            if($LASTEXITCODE -ne 0){throw 'Extracted file integrity mismatch'}
+          }finally{Pop-Location}
           "Anonymous public download and extracted-file verification passed: $env:RELEASE_TAG" >> $env:GITHUB_STEP_SUMMARY
