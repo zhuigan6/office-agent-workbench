@@ -30,3 +30,8 @@ publishes a release, signs in to agents or reads local user data. Only this manu
 job has repository contents-write permission. Its SHA256SUMS-ci.txt describes its
 own assembled ZIP, not a byte-identical claim about the local ZIP. Maintainers
 verify results/digests and release notes before publishing the draft.
+
+`verify-release.yml` is manual and read-only. It downloads the public API record,
+checksum and ZIP without an Authorization header or GH_TOKEN, compares the fixed
+expected digest, extracts the archive and verifies every packaged file. This is
+public-download acceptance, not desktop Office or model-account acceptance.
