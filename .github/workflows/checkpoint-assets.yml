@@ -1,0 +1,119 @@
+name: Build checkpoint assets
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag
+        required: true
+        type: string
+      commit:
+        description: Exact 40-character commit behind that tag
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: checkpoint-assets-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_COMMIT: ${{ inputs.commit }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Validate immutable source identity
+        run: |
+          if($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$'){throw 'Invalid release tag'}
+          if($env:RELEASE_COMMIT -notmatch '^[a-f0-9]{40}$'){throw 'Invalid release commit'}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.14.0
+          cache: npm
+      - name: Verify source and draft, without replacing published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if((git rev-parse HEAD) -cne $env:RELEASE_COMMIT){throw 'Tag commit mismatch'}
+          if($LASTEXITCODE -ne 0){throw 'Cannot resolve tag commit'}
+          $pkg=Get-Content package.json -Raw | ConvertFrom-Json
+          if(('v'+$pkg.version) -cne $env:RELEASE_TAG){throw 'Package version mismatch'}
+          $release=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft,assets | ConvertFrom-Json
+          if($LASTEXITCODE -ne 0 -or -not $release.isDraft){throw 'Existing draft release required'}
+          $name='OfficeAgentWorkbench-'+$env:RELEASE_TAG+'-windows-x64.zip'
+          if(@($release.assets | Where-Object {$_.name -eq $name -or $_.name -eq 'SHA256SUMS-ci.txt'}).Count){throw 'Asset already exists; no clobber allowed'}
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - name: Download original checksum-verified runtimes
+        run: |
+          $ErrorActionPreference='Stop'
+          $lock=Get-Content upstreams.lock.json -Raw | ConvertFrom-Json
+          $stage=Join-Path $env:RUNNER_TEMP 'checkpoint-inputs'
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          $coreZip=Join-Path $stage 'core.zip'
+          Invoke-WebRequest ($lock.aioncore.release.Replace('/tag/','/download/')+'/'+$lock.aioncore.asset) -OutFile $coreZip
+          if((Get-FileHash -LiteralPath $coreZip).Hash.ToLowerInvariant() -cne $lock.aioncore.archiveSha256){throw 'Core archive integrity failure'}
+          Expand-Archive -LiteralPath $coreZip -DestinationPath (Join-Path $stage 'core')
+          $core=@(Get-ChildItem -LiteralPath (Join-Path $stage 'core') -Recurse -File -Filter aioncore.exe)
+          if($core.Count -ne 1 -or (Get-FileHash -LiteralPath $core[0].FullName).Hash.ToLowerInvariant() -cne $lock.aioncore.binarySha256){throw 'Core binary integrity failure'}
+          $office=Join-Path $stage 'officecli.exe'
+          Invoke-WebRequest ($lock.officecli.release.Replace('/tag/','/download/')+'/'+$lock.officecli.asset) -OutFile $office
+          if((Get-FileHash -LiteralPath $office).Hash.ToLowerInvariant() -cne $lock.officecli.binarySha256){throw 'OfficeCLI integrity failure'}
+          $nodeName='node-v24.11.0-win-x64.zip'
+          $sums=(Invoke-WebRequest 'https://nodejs.org/dist/v24.11.0/SHASUMS256.txt').Content
+          $line=@(($sums -split "`n") | Where-Object {$_ -match ('^[a-f0-9]{64}\s+'+[regex]::Escape($nodeName)+'\s*$')})
+          if($line.Count -ne 1){throw 'Official managed Node checksum missing'}
+          $nodeZip=Join-Path $stage $nodeName
+          Invoke-WebRequest ('https://nodejs.org/dist/v24.11.0/'+$nodeName) -OutFile $nodeZip
+          if((Get-FileHash -LiteralPath $nodeZip).Hash.ToLowerInvariant() -cne ($line[0] -split '\s+')[0]){throw 'Managed Node integrity failure'}
+          $resources=Join-Path $stage 'managed-resources'
+          Expand-Archive -LiteralPath $nodeZip -DestinationPath (Join-Path $resources 'node')
+          @{schemaVersion=2;runtimeKey='win32-x64';node=@{version='24.11.0';root='node/node-v24.11.0-win-x64';executable='node.exe'};clis=@()} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $resources 'manifest.json') -Encoding utf8
+          "WORKBENCH_BUILD_AIONCORE=$($core[0].FullName)" >> $env:GITHUB_ENV
+          "WORKBENCH_BUILD_OFFICECLI=$office" >> $env:GITHUB_ENV
+          "WORKBENCH_BUILD_RESOURCES=$resources" >> $env:GITHUB_ENV
+          "CHECKPOINT_PACKAGE=$(Join-Path $env:RUNNER_TEMP 'checkpoint-package')" >> $env:GITHUB_ENV
+      - name: Build and verify assembled package
+        run: |
+          $ErrorActionPreference='Stop'
+          node --import tsx scripts/Build-Package.ts $env:CHECKPOINT_PACKAGE
+          if($LASTEXITCODE -ne 0){throw 'Package build failed'}
+          Push-Location $env:CHECKPOINT_PACKAGE
+          try{
+            & .\runtime\node\node.exe --import tsx --test --test-concurrency=4 tests/*.test.ts
+            if($LASTEXITCODE -ne 0){throw 'Assembled package tests failed'}
+            & .\runtime\node\node.exe .\node_modules\typescript\bin\tsc --noEmit
+            if($LASTEXITCODE -ne 0){throw 'Assembled package typecheck failed'}
+            & .\runtime\node\node.exe --import tsx scripts/Manage-Package.ts verify .
+            if($LASTEXITCODE -ne 0){throw 'Assembled package integrity failed'}
+          }finally{Pop-Location}
+      - name: Archive and upload to the existing draft only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'checkpoint-assets'
+          New-Item -ItemType Directory -Path $out | Out-Null
+          $name='OfficeAgentWorkbench-'+$env:RELEASE_TAG+'-windows-x64.zip'
+          $zip=Join-Path $out $name
+          tar.exe -a -cf $zip -C $env:CHECKPOINT_PACKAGE .
+          if($LASTEXITCODE -ne 0){throw 'Archive failed'}
+          $sums=Join-Path $out 'SHA256SUMS-ci.txt'
+          ((Get-FileHash -LiteralPath $zip).Hash.ToLowerInvariant()+'  '+$name) | Set-Content -LiteralPath $sums -Encoding ascii
+          gh release upload $env:RELEASE_TAG $zip $sums --repo $env:GITHUB_REPOSITORY
+          if($LASTEXITCODE -ne 0){throw 'Draft asset upload failed'}
+          "Published draft assets for commit $env:RELEASE_COMMIT" >> $env:GITHUB_STEP_SUMMARY

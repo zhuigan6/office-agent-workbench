@@ -14,10 +14,19 @@ account, API key, local certificate or installed Microsoft Office is required.
 Only explicit synthetic result files/reports are uploaded, never all of .local.
 
 Actions are commit-pinned, checkout credentials are not retained and token
-permissions are read-only. The workflow has no pull_request_target, publication
+permissions are read-only. The verification workflow has no pull_request_target, publication
 or secret-bearing deployment job. Each publication's remote execution must still
 be observed; local syntax checks cannot prove the new revision passed.
 
 Desktop Office rendering, native COM multi-window behavior and actual model
 tasks remain separate real-machine acceptance cases. An engine HTML preview
 is not evidence of pixel-identical Microsoft Office rendering.
+
+`checkpoint-assets.yml` is a separate manual recovery/build path for large-asset
+upload failures. It checks an existing tag's exact commit and package version,
+requires an existing draft, downloads original checksum-verified binaries, and
+tests source and assembled package before upload. It never overwrites assets,
+publishes a release, signs in to agents or reads local user data. Only this manual
+job has repository contents-write permission. Its SHA256SUMS-ci.txt describes its
+own assembled ZIP, not a byte-identical claim about the local ZIP. Maintainers
+verify results/digests and release notes before publishing the draft.
