@@ -34,3 +34,21 @@ test('failed help responses are never reused as a successful capability record',
   await engine.help(['docx']);await engine.help(['docx']);assert.equal(engine.calls,2);
   engine.fail=false;await engine.help(['docx']);await engine.help(['docx']);assert.equal(engine.calls,3);
 }));
+
+test('equal-sized same-timestamp replacement cannot reuse help or bypass a pin',async t=>{
+  let bytes=Buffer.from('one'),inode=1n;const hash=createHash('sha256').update(bytes).digest('hex');
+  t.mock.method(fs,'realpath',async()=>'/simulated/engine');t.mock.method(fs,'stat',async()=>({dev:1n,ino:inode,size:3n,mtimeNs:10n,ctimeNs:10n,birthtimeNs:1n}));t.mock.method(fs,'readFile',async()=>bytes);
+  const pinned=new Fake('engine','unused',hash),unpinned=new Fake('engine','unused');await pinned.help(['docx']);await unpinned.help(['docx']);bytes=Buffer.from('two');inode=2n;
+  await assert.rejects(pinned.help(['docx']),/differs from the pinned release/);assert.equal(pinned.calls,1);await unpinned.help(['docx']);assert.equal(unpinned.calls,2);
+  const upgraded=new Fake('engine','unused',createHash('sha256').update(bytes).digest('hex'));assert.equal((await upgraded.help(['docx'])).code,0);assert.equal(upgraded.calls,1);
+});
+test('metadata-only changes during help retain the same verified content identity',async t=>{
+  let time=10n,reads=0;const bytes=Buffer.from('one'),hash=createHash('sha256').update(bytes).digest('hex');
+  t.mock.method(fs,'realpath',async()=>'/simulated/engine');t.mock.method(fs,'stat',async()=>({dev:1n,ino:1n,size:3n,mtimeNs:time,ctimeNs:time,birthtimeNs:1n}));t.mock.method(fs,'readFile',async()=>{reads++;return bytes;});
+  const engine=new Fake('engine','unused',hash);t.mock.method(engine,'run',async()=>{engine.calls++;time++;return {stdout:'same engine help',stderr:'',code:0};});
+  assert.equal((await engine.help(['docx'])).stdout,'same engine help');assert.equal((await engine.help(['docx'])).stdout,'same engine help');assert.equal(engine.calls,1);assert.equal(reads,2);
+});
+test('engine identity changing during hashing is refused rather than cached',async t=>{
+  let inode=1n;t.mock.method(fs,'realpath',async()=>'/simulated/engine');t.mock.method(fs,'stat',async()=>({dev:1n,ino:inode,size:3n,mtimeNs:10n,ctimeNs:10n,birthtimeNs:1n}));t.mock.method(fs,'readFile',async()=>{inode++;return Buffer.from('one');});
+  const engine=new Fake('engine','unused');await assert.rejects(engine.help(['docx']),/changed while its content was being verified/);assert.equal(engine.calls,0);
+});

@@ -4,7 +4,7 @@ import { findCodexLauncher, inspectCodexRuntime } from '../packages/native-sessi
 import { local } from '../apps/local-host/config.ts';
 const evidence = path.join(local, 'verification'); await fs.mkdir(evidence, { recursive: true });
 try {
-  const report = await inspectCodexRuntime(process.argv[2] ?? await findCodexLauncher(), evidence);
+  const report = await inspectCodexRuntime(process.argv[2] ?? await findCodexLauncher(), evidence, process.cwd());
   console.log(JSON.stringify(report));
   if (!report.protocol.compatibleShape) process.exitCode = 1;
 } catch {

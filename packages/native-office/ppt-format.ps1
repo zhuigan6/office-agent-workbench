@@ -19,10 +19,10 @@ function Read-PptFormat($entry,$selection){
     $length=if($null -ne $selection.textLength){[int]$selection.textLength}else{$total}
     if($start -lt 1 -or $length -lt 1 -or $start+$length-1 -gt $total){throw 'PPT_TEXT_RANGE'}
     $fonts=[Collections.Generic.List[object]]::new()
-    for($i=1;$i -le $total;$i++){
+    if(Get-Command Read-PptBasicFontArray -ErrorAction SilentlyContinue){foreach($profile in @(Read-PptBasicFontArray $all)){$fonts.Add($profile)}}else{for($i=1;$i -le $total;$i++){
         $font=$all.Characters($i,1).Font
         $fonts.Add([ordered]@{bold=[int]$font.Bold;italic=[int]$font.Italic;size=[double]$font.Size;name=[string]$font.Name})
-    }
+    }}
     $state=[ordered]@{slideId=[string]$selection.slideId;shapeId=[string]$shape.Id;text=[string]$all.Text;left=[double]$shape.Left;top=[double]$shape.Top;width=[double]$shape.Width;height=[double]$shape.Height;rotation=[double]$shape.Rotation;start=$start;length=$length;fonts=$fonts.ToArray()}
     $hash=Hash-Text (ConvertTo-Json -InputObject $state -Depth 8 -Compress)
     return @{selection=$selection;state=$state;contentHash=$hash}
@@ -32,6 +32,7 @@ function Write-PptFormat($entry,$data){
     $before=Read-PptFormat $entry $data.selection
     if($before.contentHash -cne [string]$data.expectedFingerprint){return @{verified=$false;code='REVISION_CONFLICT'}}
     $shape=Resolve-PptTextShape $entry $data.selection
+    if([int]$shape.TextFrame2.AutoSize -ne 0){return @{notIssued=$true;verified=$false;code='PPT_FIT_CAPTURE_REQUIRED'}}
     $range=$shape.TextFrame.TextRange.Characters([int]$before.state.start,[int]$before.state.length)
     if($data.restore){
         if($data.restore.Count -ne $before.state.length){throw 'PPT_RESTORE_SHAPE'}
@@ -55,5 +56,7 @@ function Write-PptFormat($entry,$data){
             if($after.state.fonts[$i][$field] -cne $expected){$verified=$false}
         }
     }
-    return @{before=$before;after=$after;verified=$verified;revision=$after.contentHash;code=$(if($verified){'VERIFIED'}else{'READBACK_MISMATCH'})}
+    $replacementRevision=$null
+    if($data.selection.replacementRevision){try{$replacementRevision=(Read-PptReplacement $entry $data.selection).contentHash}catch{}}
+    return @{before=$before;after=$after;verified=$verified;revision=$after.contentHash;replacementRevision=$replacementRevision;code=$(if($verified){'VERIFIED'}else{'READBACK_MISMATCH'})}
 }

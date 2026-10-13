@@ -5,7 +5,7 @@ const entry = (method: string, fields: string[]) => ({ properties: { method: { e
   type: 'object', properties: Object.fromEntries(fields.map(field => [field, { type: 'string' }])), required: fields,
 } } });
 function bundle() {
-  return { requests: { oneOf: [entry('initialize', ['clientInfo', 'capabilities']), entry('thread/resume', ['threadId']), entry('thread/queue/add', ['threadId', 'clientUserMessageId', 'input'])] },
+  return { requests: { oneOf: [entry('initialize', ['clientInfo', 'capabilities']), entry('thread/resume', ['threadId']), entry('thread/queue/add', ['threadId', 'clientUserMessageId', 'input']),entry('thread/read',['threadId','includeTurns'])] },
     notifications: { oneOf: ['turn/started', 'turn/completed', 'item/started', 'item/completed'].map(method => entry(method, ['threadId', method.startsWith('turn/') ? 'turn' : 'item'])) },
     queueResponse: { definitions: { Receipt: { properties: { id: { type: 'string' }, clientUserMessageId: { type: 'string' } } } }, properties: { queuedSubmission: { $ref: '#/definitions/Receipt' } } } };
 }
@@ -28,6 +28,9 @@ test('installed native versions are recognized without assuming a newer release 
 test('Codex capability inspection permits additive APIs but rejects required-argument and receipt breaks', () => {
   const value = bundle(); const accepted = inspectCodexProtocol(value);
   assert.equal(accepted.compatibleShape, true);
+  assert.equal(accepted.cancellationShape,false);
+  const cancel=bundle();cancel.requests.oneOf.push(entry('turn/interrupt',['threadId','turnId']),entry('thread/queue/list',['threadId','limit']),entry('thread/queue/start',['threadId','queuedSubmissionId']));
+  assert.equal(inspectCodexProtocol(cancel).cancellationShape,true);assert.equal(inspectCodexProtocol(cancel).compatibleShape,true);
   value.requests.oneOf.push(entry('future/read', ['optional']));
   assert.equal(inspectCodexProtocol(value).compatibleShape, true);
   value.requests.oneOf[2].properties.params.required.push('newRequired');
@@ -40,10 +43,13 @@ test('Codex capability inspection permits additive APIs but rejects required-arg
 });
 
 test('removed methods, changed public event shapes and external references fail closed', () => {
-  const value = bundle(); value.requests.oneOf.pop();
+  const value = bundle(); value.requests.oneOf.splice(2,1);
   assert.equal(inspectCodexProtocol(value).queuedSend, false);
   const event = bundle(); delete (event.notifications.oneOf[0].properties.params.properties as any).threadId;
   assert.equal(inspectCodexProtocol(event).publicEvents, false);
   const external = bundle(); external.queueResponse.properties.queuedSubmission.$ref = 'https://untrusted/receipt';
   assert.equal(inspectCodexProtocol(external).queuedSend, false);
+  const missingRead=bundle();missingRead.requests.oneOf.pop();
+  assert.equal(inspectCodexProtocol(missingRead).sessionRead,false);
+  assert.equal(inspectCodexProtocol(missingRead).compatibleShape,false);
 });

@@ -10,9 +10,17 @@ function Read-PptLayout($entry,$selection){
     if($shape.Type -eq 6){throw 'PPT_GROUP_LAYOUT_REQUIRES_CHILD_SNAPSHOT'}
     $geometry=[ordered]@{left=[double]$shape.Left;top=[double]$shape.Top;width=[double]$shape.Width;height=[double]$shape.Height;rotation=[double]$shape.Rotation}
     $state=[ordered]@{slideId=[string]$selection.slideId;shapeId=[string]$shape.Id;type=[int]$shape.Type;geometry=$geometry;lockAspectRatio=[int]$shape.LockAspectRatio}
-    return @{selection=$selection;state=$state;contentHash=(Hash-Text (ConvertTo-Json -InputObject $state -Depth 6 -Compress))}
+    if($selection.frameProfileVersion -eq 1){$state.textFrame=Read-PptTextFrame $shape;if($state.textFrame.AutoSize -eq 2){$state.nominalContentHash=Read-PptFrameContentHash $entry $selection}}
+    if($selection.appearanceProfileVersion -eq 1){$state.appearance=Read-PptAppearance $shape;$state.appearanceContentHash=Read-PptFrameContentHash $entry $selection $true}
+    # Canvas observations are not added to legacy layout fingerprints.
+    return @{selection=$selection;state=$state;contentHash=(Hash-Text (ConvertTo-Json -InputObject $state -Depth 6 -Compress));slideSize=@{width=[double]$entry.doc.PageSetup.SlideWidth;height=[double]$entry.doc.PageSetup.SlideHeight}}
 }
 function Write-PptLayout($entry,$data){
+    if($data.appearance -or $data.restoreAppearance){return Write-PptAppearanceLayout $entry $data}
+    return Write-PptLayoutCore $entry $data
+}
+function Write-PptLayoutCore($entry,$data){
+    if($data.textFrame -or $data.restoreTextFrame){return Write-PptTextFrameLayout $entry $data}
     if($entry.doc.ReadOnly){return @{notIssued=$true;verified=$false;code='READ_ONLY'}}
     $before=Read-PptLayout $entry $data.selection
     if($before.contentHash -cne [string]$data.expectedFingerprint){return @{verified=$false;code='REVISION_CONFLICT'}}
@@ -47,6 +55,7 @@ function Write-PptLayout($entry,$data){
     }
     $next=@{};foreach($property in $data.selection.PSObject.Properties){$next[$property.Name]=$property.Value}
     $next.layoutRevision=$after.contentHash;$next.contentHash=if($afterText){$afterText.contentHash}else{$after.contentHash}
+    if($next.replacementRevision){try{$next.replacementRevision=(Read-PptReplacement $entry $next).contentHash}catch{$next.Remove('replacementRevision')}}
     return @{before=$before;after=$after;beforeText=$beforeText;afterText=$afterText;continuationSelection=$next;verified=$verified;revision=$after.contentHash;code=$(if($verified){'VERIFIED'}else{'READBACK_MISMATCH'})}
 }
 function Read-PptShapes($entry,$data){

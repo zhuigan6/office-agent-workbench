@@ -1,8 +1,15 @@
 $script:ambiguousOfficePaths=@{}
 function Add-OfficeCandidate($items,[string]$kind,$doc,$app,[string]$instanceId,[string]$source){
-    $pointer=[Runtime.InteropServices.Marshal]::GetIUnknownForObject($doc)
-    try{$identity=$kind+':'+$pointer.ToInt64().ToString('X')}finally{[void][Runtime.InteropServices.Marshal]::Release($pointer)}
-    if($items.ContainsKey($identity)){return}
+    $identity=$null
+    if($kind -in @('word','excel')){
+        $handles=[Collections.Generic.List[string]]::new()
+        for($i=1;$i -le $doc.Windows.Count;$i++){$handle=[string]$doc.Windows.Item($i).Hwnd;if($handle -and $handle -ne '0'){$handles.Add($handle)}}
+        if($handles.Count -gt 0){$ordered=$handles.ToArray();[Array]::Sort($ordered,[StringComparer]::Ordinal);$identity=$kind+':windows:'+($ordered -join ',')+'|'+([string]$doc.FullName).ToLowerInvariant()}
+    }
+    if($null -eq $identity){$pointer=[Runtime.InteropServices.Marshal]::GetIUnknownForObject($doc);try{$identity=$kind+':'+$pointer.ToInt64().ToString('X')}finally{[void][Runtime.InteropServices.Marshal]::Release($pointer)}}
+    # Repeated window/ROT lookups can produce distinct COM proxies for the same
+    # Word/Excel document. Real window sets identify it without merging processes.
+    if($items.ContainsKey($identity)){if($source -eq 'native-window' -and $items[$identity].source -ne 'native-window'){$items[$identity]=@{kind=$kind;doc=$doc;app=$app;location=[string]$doc.FullName;name=[string]$doc.Name;identity=$identity;instanceId=$instanceId;source=$source}};return}
     $items[$identity]=@{kind=$kind;doc=$doc;app=$app;location=[string]$doc.FullName;name=[string]$doc.Name;identity=$identity;instanceId=$instanceId;source=$source}
 }
 function Get-OfficeDiscovery {

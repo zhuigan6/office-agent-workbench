@@ -8,7 +8,7 @@ import {root,loadConfig} from '../apps/local-host/config.ts';
 import {assetProperty} from '../packages/document-workspace/assets.ts';
 import {fileToolResult} from '../packages/contracts/file-results.ts';
 import {selectedHelp} from '../packages/contracts/file-help.ts';
-const binary=process.env.WORKBENCH_OFFICECLI || loadConfig().officecli,lock=JSON.parse(await fs.readFile(path.join(root,'upstreams.lock.json'),'utf8'));
+const binary=process.env.WORKBENCH_OFFICECLI || loadConfig().officecli,lock=JSON.parse(await fs.readFile(process.env.WORKBENCH_UPSTREAM_LOCK || path.join(root,'upstreams.lock.json'),'utf8'));
 await fs.mkdir(path.join(root,'.local','verification'),{recursive:true});
 const output=path.join(root,'.local','verification','complex-'+Date.now());await fs.mkdir(output,{recursive:false});
 const store=new Store(':memory:'),engine=new OfficeCli(binary,output,lock.officecli.binarySha256),files=new FileWorkspace(store,output,engine);

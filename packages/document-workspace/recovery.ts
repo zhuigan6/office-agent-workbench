@@ -5,6 +5,16 @@ import {restoreWordFormat} from './word-format.ts';
 import {restoreWordReplacement} from './word-replace.ts';
 import {restorePptFormat} from './ppt-format.ts';
 import {restorePptLayout} from './ppt-layout.ts';
+import {restorePptBatch} from './ppt-layout-batch.ts';
+import {restorePptReplacement} from './ppt-replace.ts';
+import {restoreWordTableBatch} from './word-table-batch.ts';
+import {restoreWordTableLayout} from './word-table-layout.ts';
+import {restoreWordParagraphBatch} from './word-paragraph-batch.ts';
+import {restoreWordTableRows} from './word-table-rows.ts';
+import {restoreExcelTable} from './excel-table.ts';
+import {restoreExcelChart} from './excel-chart.ts';
+import {restoreExcelRangeFormat} from './excel-range-format.ts';
+import {restoreExcelTableCreate} from './excel-table-create.ts';
 
 export function recoveryRequest(operation:Operation){
   const result=operation.result as any,payload=operation.payload as any;
@@ -19,8 +29,22 @@ export function recoveryRequest(operation:Operation){
   throw new AppError('RECOVERY_UNAVAILABLE','File copies are preserved separately; this action restores only live edits.');
 }
 export async function restoreOperation(broker:DocumentBroker,id:string){
+  if(broker.store.getOperation(id)?.kind==='excel.table.create'){const r=await restoreExcelTableCreate(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:r.id,status:r.status});return r;}
+  if(broker.store.getOperation(id)?.kind==='excel.range.format'){const r=await restoreExcelRangeFormat(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:r.id,status:r.status});return r;}
+  if(['excel.chart.layout','excel.chart.create'].includes(broker.store.getOperation(id)?.kind??'')){const r=await restoreExcelChart(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:r.id,status:r.status});return r;}
+  if(['excel.table.style','excel.table.rows','excel.table.columns'].includes(broker.store.getOperation(id)?.kind??'')){const r=await restoreExcelTable(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:r.id,status:r.status});return r;}
   const operation=broker.store.getOperation(id);
   if(!operation)throw new AppError('NOT_FOUND','Operation not found.',404);
+  if(operation.kind==='word.table.rows'){const result=await restoreWordTableRows(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:result.id,status:result.status});return result;}
+  if(operation.kind==='word.paragraph.batch'){const result=await restoreWordParagraphBatch(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:result.id,status:result.status});return result;}
+  if(operation.kind==='word.table.layout'){const result=await restoreWordTableLayout(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:result.id,status:result.status});return result;}
+  if(operation.kind==='word.table.batch'){const result=await restoreWordTableBatch(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:result.id,status:result.status});return result;}
+  if(operation.kind==='ppt.replace'){
+    const result=await restorePptReplacement(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:result.id,status:result.status});return result;
+  }
+  if(operation.kind==='ppt.layout.batch'){
+    const result=await restorePptBatch(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:result.id,status:result.status});return result;
+  }
   if(operation.kind==='ppt.layout'){
     const result=await restorePptLayout(broker,id);broker.store.event('operation.restore',{originalId:id,restoreId:result.id,status:result.status});return result;
   }

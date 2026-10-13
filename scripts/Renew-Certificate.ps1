@@ -1,13 +1,26 @@
 ﻿[CmdletBinding()]
-param([switch]$Force)
+param([switch]$Force,[switch]$CheckOnly)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Start-Service.ps1')
 $root=Get-WorkbenchRoot
 $config=Get-WorkbenchConfig $root
-if ((Test-WorkbenchPort $config.port) -or (Test-WorkbenchPort $config.corePort)) {throw 'Stop Workbench with Stop-Service.ps1 before renewing the certificate.'}
 $local=Join-Path $root '.local'
 $old=[Security.Cryptography.X509Certificates.X509Certificate2]::new((Join-Path $local 'server.pfx'),$config.pfxPassword,[Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
-try { if (-not $Force -and $old.NotAfter -gt (Get-Date).AddDays(21)) {Write-Output 'Certificate is not near expiry; no changes made.';return} } finally {$old.Dispose()}
+try {
+ if ($CheckOnly) {
+  $now=Get-Date
+  $trustStore=[Security.Cryptography.X509Certificates.X509Store]::new('Root','CurrentUser')
+  try{$trustStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly);$trusted=$trustStore.Certificates.Find([Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,$old.Thumbprint,$false).Count -gt 0}finally{$trustStore.Dispose()}
+  $publicCert=[Security.Cryptography.X509Certificates.X509Certificate2]::new((Join-Path $local 'server.cer'))
+  try{$identity=$old.Thumbprint -ieq $config.certificateThumbprint -and $publicCert.Thumbprint -ieq $old.Thumbprint -and $old.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::DnsName,$false) -ieq 'localhost'}finally{$publicCert.Dispose()}
+  $valid=$old.NotBefore -le $now -and $old.NotAfter -gt $now
+  $state=if(-not $identity -or -not $trusted -or -not $old.HasPrivateKey){'needs-attention'}elseif(-not $valid){'expired-or-not-yet-valid'}elseif($old.NotAfter -le $now.AddDays(21)){'renew-soon'}else{'valid'}
+  [pscustomobject]@{State=$state;DaysRemaining=[Math]::Max(0,[Math]::Ceiling(($old.NotAfter-$now).TotalDays));ExpiresAt=$old.NotAfter.ToUniversalTime().ToString('o');Trusted=$trusted;IdentityMatches=$identity;HasPrivateKey=$old.HasPrivateKey;ServerRunning=((Test-WorkbenchPort $config.port) -or (Test-WorkbenchPort $config.corePort));ChangesMade=$false;RenewalRequiresOffline=$true;NewTrustMayRequireUserConfirmation=$true} | ConvertTo-Json
+  return
+ }
+ if ((Test-WorkbenchPort $config.port) -or (Test-WorkbenchPort $config.corePort)) {throw 'Stop Workbench with Stop-Service.ps1 before renewing the certificate.'}
+ if (-not $Force -and $old.NotAfter -gt (Get-Date).AddDays(21)) {Write-Output 'Certificate is not near expiry; no changes made.';return}
+} finally {$old.Dispose()}
 $backup=Join-Path $local ('certificate-before-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $backup | Out-Null
 foreach ($name in @('config.json','server.pfx','server.cer')) {Copy-Item -LiteralPath (Join-Path $local $name) -Destination (Join-Path $backup $name)}

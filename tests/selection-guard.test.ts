@@ -16,7 +16,8 @@ test('guard is task-local and only new message context removes or replaces it',(
   assert.doesNotThrow(()=>guard.assert('one','/tools/write-selection',{selectionId:'fixed'}));
   assert.doesNotThrow(()=>guard.assert('other','/tools/write',{}));
   guard.set('one',{id:'ppt',kind:'powerpoint'});
-  assert.throws(()=>guard.assert('one','/tools/replace-selection',{selectionId:'ppt'}),{code:'SELECTION_LOCKED'});
+  assert.doesNotThrow(()=>guard.assert('one','/tools/replace-selection',{selectionId:'ppt'}));
+  assert.throws(()=>guard.assert('one','/tools/replace-selection',{selectionId:'other'}),{code:'SELECTION_LOCKED'});
   guard.set('one');assert.doesNotThrow(()=>guard.assert('one','/tools/write',{}));
 });
 test('a recreated guard retains restrictions and does not unlock stale references',()=>{

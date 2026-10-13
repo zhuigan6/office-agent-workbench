@@ -6,10 +6,37 @@ $script:documents=@{}
 $script:session=[Guid]::NewGuid().ToString()
 . (Join-Path $PSScriptRoot 'fingerprint.ps1')
 . (Join-Path $PSScriptRoot 'selection.ps1')
+. (Join-Path $PSScriptRoot 'word-readonly.ps1')
+. (Join-Path $PSScriptRoot 'word-tables.ps1')
+. (Join-Path $PSScriptRoot 'excel-tables.ps1')
+. (Join-Path $PSScriptRoot 'excel-charts.ps1')
+. (Join-Path $PSScriptRoot 'excel-chart-package.ps1')
+. (Join-Path $PSScriptRoot 'excel-chart-format.ps1')
+. (Join-Path $PSScriptRoot 'excel-chart-create.ps1')
+. (Join-Path $PSScriptRoot 'excel-table-rows.ps1')
+. (Join-Path $PSScriptRoot 'excel-table-package.ps1')
+. (Join-Path $PSScriptRoot 'excel-profile-restore.ps1')
+. (Join-Path $PSScriptRoot 'excel-table-create.ps1')
+. (Join-Path $PSScriptRoot 'excel-table-columns.ps1')
+. (Join-Path $PSScriptRoot 'excel-values.ps1')
+. (Join-Path $PSScriptRoot 'excel-range-format.ps1')
+. (Join-Path $PSScriptRoot 'word-table-layout.ps1')
+. (Join-Path $PSScriptRoot 'word-table-widths.ps1')
+. (Join-Path $PSScriptRoot 'word-table-borders.ps1')
+. (Join-Path $PSScriptRoot 'word-table-rows.ps1')
 . (Join-Path $PSScriptRoot 'word-format.ps1')
 . (Join-Path $PSScriptRoot 'word-replace.ps1')
+. (Join-Path $PSScriptRoot 'word-paragraph-batch.ps1')
 . (Join-Path $PSScriptRoot 'ppt-format.ps1')
+. (Join-Path $PSScriptRoot 'ppt-font-runs.ps1')
 . (Join-Path $PSScriptRoot 'ppt-layout.ps1')
+. (Join-Path $PSScriptRoot 'ppt-appearance.ps1')
+. (Join-Path $PSScriptRoot 'ppt-replace.ps1')
+. (Join-Path $PSScriptRoot 'ppt-rich-format.ps1')
+. (Join-Path $PSScriptRoot 'ppt-paragraph.ps1')
+. (Join-Path $PSScriptRoot 'ppt-lists.ps1')
+. (Join-Path $PSScriptRoot 'ppt-text-frame.ps1')
+. (Join-Path $PSScriptRoot 'ppt-frame-package.ps1')
 . (Join-Path $PSScriptRoot 'discovery.ps1')
 . (Join-Path $PSScriptRoot 'targets.ps1')
 . (Join-Path $PSScriptRoot 'word-snapshot.ps1')
@@ -33,10 +60,11 @@ function Get-Documents {
                 if($ambiguous){$script:diagnostics.Add(@{kind=$kind;message='DOCUMENT_ID_REQUIRES_INSTANCE_BINDING';name=$name})}
                 $script:documents[$key]=@{kind=$kind;doc=$doc;app=$app;location=$location}
                 $caps=if($kind -eq 'excel'){@('read','write','snapshot')}else{@('readText','writeText','snapshot')}
-                if([bool]$doc.ReadOnly -or ($kind -eq 'word' -and $doc.ProtectionType -ne -1)){$caps=@($caps | Where-Object {$_ -notin @('write','writeText')})}
+                $writeRestriction=if($kind -eq 'word'){Get-WordWriteRestriction $doc}elseif([bool]$doc.ReadOnly){'native-readonly'}else{$null}
+                if($writeRestriction){$caps=@($caps | Where-Object {$_ -notin @('write','writeText')})}
                 $windowIds=@(for($w=1;$w -le $doc.Windows.Count;$w++){Get-OfficeWindowIdentity $kind $doc.Windows.Item($w)})
                 $processId=if($candidate.instanceId -notlike 'rot:*'){[int]($candidate.instanceId.Split(':')[0])}else{$null}
-                $found.Add(@{id=$key;name=$name;kind=$kind;location=$location;capabilities=$caps;saved=[bool]$doc.Saved;sessionId=$script:session;windowIds=$windowIds;instanceId=$candidate.instanceId;processId=$processId;discoverySource=$candidate.source})
+                $found.Add(@{id=$key;name=$name;kind=$kind;location=$location;capabilities=$caps;saved=[bool]$doc.Saved;sessionId=$script:session;windowIds=$windowIds;instanceId=$candidate.instanceId;processId=$processId;discoverySource=$candidate.source;writeRestriction=$writeRestriction})
         } catch { $script:diagnostics.Add(@{kind=$kind;message=$_.Exception.Message}) }
     }
     return ,$found.ToArray()
@@ -104,6 +132,10 @@ function Read-Text($entry,$data){
 function Invoke-Office($request){
     if($request.method -eq 'discover'){$documents=Get-Documents;return @{documents=$documents;sessionId=$script:session;diagnostics=$script:diagnostics.ToArray()}}
     $entry=Resolve-Document ([string]$request.documentId);$data=$request.payload
+    if($entry.kind -eq 'word' -and ([string]$request.method -like 'writeWord*' -or $request.method -eq 'writeText')){
+        $restriction=Get-WordWriteRestriction $entry.doc
+        if($restriction){return @{code='READ_ONLY';verified=$false;notIssued=$true;writeRestriction=$restriction;message='Word document/window is readonly, protected or unavailable.'}}
+    }
     switch($request.method){
         'selection' {return Capture-OfficeSelection $entry}
         'target' {return Resolve-OfficeTarget $entry $data}
@@ -111,9 +143,42 @@ function Invoke-Office($request){
         'readWordFormat' {return Read-WordFormat $entry $data.selection $data.fields $data.paragraphFields}
         'writeWordFormat' {return Write-WordFormat $entry $data}
         'readWordReplacement' {return Read-WordReplacement $entry $data.selection}
+        'readWordTables' {return Read-WordTables $entry $data}
+        'readExcelTables' {return Read-ExcelTables $entry $data}
+        'readExcelTableCreate' {return Read-ExcelTableCreate $entry $data}
+        'readExcelTablePackage' {return Read-ExcelTablePackage $entry $data.reference}
+        'writeExcelTableCreate' {return Write-ExcelTableCreate $entry $data}
+        'removeExcelCreatedTable' {return Remove-ExcelCreatedTable $entry $data}
+        'readExcelRangeFormat' {return Read-ExcelRangeFormat $entry $data}
+        'writeExcelRangeFormat' {return Write-ExcelRangeFormat $entry $data}
+        'readExcelSheets' {return Read-ExcelSheets $entry $data}
+        'readExcelCharts' {return Read-ExcelCharts $entry $data}
+        'readExcelChart' {if($data.reference.formatRevision){return Read-ExcelChartFormat $entry $data.reference};return Read-ExcelChart $entry $data.reference}
+        'readExcelChartPackage' {return Read-ExcelChartPackageGuard $entry $data.reference}
+        'readExcelChartFormat' {return Read-ExcelChartFormat $entry $data.reference}
+        'readExcelChartCreate' {return Read-ExcelChartCreate $entry $data}
+        'writeExcelChartCreate' {return Write-ExcelChartCreate $entry $data}
+        'removeExcelCreatedChart' {return Remove-ExcelCreatedChart $entry $data}
+        'writeExcelChartLayout' {return Write-ExcelChartLayout $entry $data}
+        'readExcelTable' {return Read-ExcelTable $entry $data.reference}
+        'writeExcelTableStyle' {return Write-ExcelTableStyle $entry $data}
+        'readExcelTableAppend' {return Read-ExcelTableAppend $entry $data}
+        'writeExcelTableRows' {return Write-ExcelTableRows $entry $data}
+        'readExcelTableColumns' {return Read-ExcelTableColumns $entry $data}
+        'writeExcelTableColumns' {return Write-ExcelTableColumns $entry $data}
+        'readExcelTailProbe' {return Read-ExcelTail $entry $data.sheet $data.range}
+        'readWordTableSelection' {return Read-WordTableSelection $entry $data.reference}
+        'readWordBatchCell' {return Read-WordBatchCell $entry $data}
+        'readWordTableLayout' {return Read-WordTableLayout $entry $data.reference ([bool]($data.includeWidths -eq $true -or $null -ne $data.properties.columnWidths -or $null -ne $data.restore.widths)) ([bool]($data.includeBorders -eq $true -or $null -ne $data.properties.borders -or $null -ne $data.restore.borders))}
+        'readWordParagraphBatch' {return Read-WordParagraphBatch $entry $data.selection ([bool]$data.verifyReference)}
+        'writeWordTableLayout' {return Write-WordTableLayout $entry $data}
+        'writeWordTableRows' {return Write-WordTableRows $entry $data}
         'writeWordReplacement' {return Write-WordReplacement $entry $data}
         'readPptFormat' {return Read-PptFormat $entry $data.selection}
         'writePptFormat' {return Write-PptFormat $entry $data}
+        'writePptRichFormat' {return Write-PptRichFormat $entry $data}
+        'readPptReplacement' {return Read-PptReplacement $entry $data.selection}
+        'writePptReplacement' {return Write-PptReplacement $entry $data}
         'readPptLayout' {return Read-PptLayout $entry $data.selection}
         'writePptLayout' {return Write-PptLayout $entry $data}
         'readPptShapes' {return Read-PptShapes $entry $data}
@@ -132,7 +197,7 @@ function Invoke-Office($request){
                 for($r=0;$r -lt $matrix.Count;$r++){for($c=0;$c -lt $matrix[$r].Count;$c++){
                     $cell=$range.Cells.Item($r+1,$c+1);$value=$matrix[$r][$c]
                     if($value -is [ValueType] -and $value -isnot [bool]){$value=[double]$value}
-                    switch($field){'values'{$cell.Value2=$value};'formulas'{$cell.Formula=$value};'numberFormat'{$cell.NumberFormat=[string]$value}}
+                    switch($field){'values'{Set-ExcelScalar $cell $value};'formulas'{Set-ExcelScalar $cell $value $true};'numberFormat'{$cell.NumberFormat=[string]$value}}
                 }}
             }}
             $sheet.Calculate()

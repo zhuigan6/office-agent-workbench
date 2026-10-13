@@ -22,7 +22,7 @@ export class CodexLinkedSession extends EventEmitter {
   private sequence = 0;
   private buffered: CodexNotification[] = [];
   private bufferedBytes = 0;
-  private completedTurns = new Set<string>();
+  private completedTurns = new Map<string,'completed'|'interrupted'>();
   private messageTurns = new Map<string, string>();
   private readonly source;
   private readonly onNotification = (notification: CodexNotification) => {
@@ -39,7 +39,10 @@ export class CodexLinkedSession extends EventEmitter {
       for (const event of events) {
         const journal = this.store.appendEvent(this.linkId, this.principal, this.owner, event);
         this.emit('publicEvent', journal);
-        if (event.kind === 'turn.completed' && [...this.messageTurns.values()].includes(event.turnId)) this.completedTurns.add(event.turnId);
+        if (event.kind === 'turn.completed' && [...this.messageTurns.values()].includes(event.turnId)) {
+          const status=(notification.params as any)?.turn?.status;
+          this.completedTurns.set(event.turnId,['failed','interrupted'].includes(status)?'interrupted':'completed');
+        }
       }
       const params = notification.params as any;
       if (params?.threadId === this.source.vendorSessionId && notification.method === 'item/completed' && params.item?.type === 'userMessage' &&
@@ -130,8 +133,9 @@ export class CodexLinkedSession extends EventEmitter {
       let message;
       try { message = this.store.message(this.linkId, this.principal, messageId); }
       catch (error) { if (error instanceof AppError && error.code === 'NATIVE_NOT_FOUND') { this.messageTurns.delete(messageId); continue; } throw error; }
+      if(['completed','interrupted','cancelled'].includes(message.state)){this.messageTurns.delete(messageId);this.completedTurns.delete(turn);continue;}
       if (message.state === 'accepted' && message.vendorRequestId) {
-        this.store.recordOutcome(this.linkId, this.principal, this.owner, this.source, messageId, 'completed', message.vendorRequestId);
+        this.store.recordOutcome(this.linkId, this.principal, this.owner, this.source, messageId, this.completedTurns.get(turn)!, message.vendorRequestId);
         this.messageTurns.delete(messageId); this.completedTurns.delete(turn);
       }
     }

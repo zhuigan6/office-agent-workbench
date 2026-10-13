@@ -3,6 +3,14 @@
 Native public-session commands share the native-session view's authenticated
 backend and never silently create/fork/resume a vendor session:
 
+Authenticated UI readers can request `GET /api/native-sessions/LINK_ID/operations?summary=1`
+for20 compact records with `items/nextCursor/hasMore/total`; add `before=OPERATION_ID`
+to inspect older records without moving back to newest on refresh. Full same-scope
+record: `?operationId=OPERATION_ID`. Default operations list remains compatible.
+Foreign document/link IDs and foreign cursors are rejected. Summary paging is not
+the uncertainty audit: all scoped unknown/running/recovery outcomes still block
+unsafe reconciliation even when they are outside the visible page or global500.
+
 ```powershell
 node --import tsx apps/cli/main.ts native-sessions
 node --import tsx apps/cli/main.ts native-events LINK_ID --after 0
@@ -13,9 +21,22 @@ node --import tsx apps/cli/main.ts native-close LINK_ID
 
 Native sends need an explicit stable ID. Unknown dispatches are not automatically
 retried; active/uncertain requests block close; closed histories remain readable.
-This is Workbench CLI/UI continuity, NOT arbitrary independent Codex TUI attachment.
-The native protocol pane is currently chat-only, without document tools. Scoped
-document CLI/MCP remains a separate least-privilege surface.
+
+File create/batch receipts include bounded upstream batch reads and failure
+indices. Reads describe the staged state when each command ran, not a final-file
+proof. Failed batches do not publish a copy; identical failed IDs are not rerun.
+Full execution evidence remains in the local journal. A task-file result can be
+opened by its exact ID from the UI for preview/inspection/validation. Access
+credentials issued by POST /api/conversations/ID/access can be revoked by an
+authenticated UI-owner DELETE to the same route with {token:THE_EXACT_CREDENTIAL};
+the server checks task ownership and never revokes by name or partial token.
+The original Codex session can also be attached by the supported native terminal
+entry, and a document-bound native session uses the same scoped tools/approval/
+selection/recovery layer as the UI. This does not promise arbitrary unrelated CLI
+history synchronization. Document-bound owned Codex servers disable inherited
+configured MCPs in their child process and verify the allowed Workbench relay;
+standalone user CLI/global configuration is not rewritten. Chat-only sessions
+retain their normal native configuration. Scope failures do not create a replacement.
 
 The terminal client uses the same HTTPS backend, saved conversations, message
 history, and file library as the standalone UI. It does not create an agent or
@@ -124,7 +145,29 @@ idle connection ends that owned server and disconnects attached terminals. Activ
 or uncertain turns block closing and further Workbench sends. The vendor queue
 arbitrates submissions; the UI guard is not a distributed terminal-writer lease.
 Old offline links remain readable and are not implicitly replaced/resumed.
-Document tools and restart/reconciliation integration remain pending in this pane.
+In V2 development, choose an existing document task when creating the shared
+session: the original scoped MCP tools are available to both entries and requests
+wait for per-call approval in the native pane. That pane also displays this
+session's edits and guarded recovery. Clean idle close and graceful backend
+restart permit explicit "resume original session" with the same vendor ID;
+unexpected shutdown/unknown dispatches remain fenced pending reconciliation.
+Previously selected tickets are not revived; recapture before a new selected edit.
+
+### Native testing workspace
+
+New native Codex sessions can use an existing directory through optional private
+`nativeWorkspace` configuration. Configure it without moving any history:
+
+```powershell
+& .\node_modules\.bin\tsx.cmd scripts/Set-NativeWorkspace.ts 'E:\ccOffice测试'
+```
+
+The script backs up private configuration and preserves other fields. Restart the
+idle Workbench to activate it. Without this option, other installs keep their
+per-session private workspace default. Existing links keep their recorded identity;
+if Codex's folder UI moved a thread, Workbench refuses to resume with its stale cwd
+instead of undoing that move. This machine's development Codex tests use the above
+folder; no transcript export, archive cleanup or account-wide home change is needed.
 
 The parent may add `"cli": "tsx apps/cli/main.ts"` to package scripts, enabling
 `npm.cmd run cli -- status`. This sidecar deliberately does not edit package.json

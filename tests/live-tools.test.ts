@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {planLiveRequest} from '../packages/contracts/live-tools.ts';
+import {planLiveRequest,scopedOperationNames,scopedLiveRequestShape} from '../packages/contracts/live-tools.ts';
 import {SelectionGuard} from '../packages/document-workspace/selection-guard.ts';
 const word={kind:'word',capabilities:['readText','writeText']};
+
+test('MCP operation names match scoped help exactly and do not advertise unavailable writes',()=>{
+  const readonly={kind:'word',capabilities:['readText']},help:any=planLiveRequest(readonly,{action:'help'}),names=scopedOperationNames(readonly);
+  assert.deepEqual(names,help.help.operations.map((entry:any)=>entry.operation));const schema=scopedLiveRequestShape(readonly).operation;
+  assert.equal(schema.parse('read-text'),'read-text');assert.throws(()=>schema.parse('format-selection'));assert.throws(()=>schema.parse('write-range'));assert.throws(()=>scopedLiveRequestShape({kind:'file',capabilities:[]}));
+  assert.equal(scopedLiveRequestShape(word).operation.parse('format-selection'),'format-selection');
+});
 test('compact live discovery is scoped, local and operation-specific',()=>{
   const page:any=planLiveRequest(word,{action:'help'});
   assert.ok(page.help.operations.some((v:any)=>v.operation==='format-selection'));
@@ -12,7 +19,11 @@ test('compact live discovery is scoped, local and operation-specific',()=>{
   assert.equal(detail.help.example.params.paragraph.alignment,'center');
   assert.ok(detail.help.details.includes('firstLineIndent'));
   const ppt:any=planLiveRequest({kind:'powerpoint',capabilities:['readText','writeText']},{action:'help',operation:'format-selection'});
-  assert.equal(ppt.help.example.params.paragraph,undefined);
+  assert.equal(ppt.help.example.params.paragraph.alignment,'center');
+  assert.equal(ppt.help.example.params.paragraph.lineSpacing.unit,'lines');
+  assert.ok(ppt.help.details.includes('COMPLETE paragraphs'));
+  assert.equal(ppt.help.paragraph.firstLineIndent,'-1584..1584 points; negative=hanging');
+  assert.equal(ppt.help.example.params.paragraph.bullet.type,'numbered');
   const text:any=planLiveRequest({kind:'powerpoint',capabilities:['readText','writeText']},{action:'help',operation:'write-text'});
   assert.equal(text.help.example.params.target.kind,'powerpoint');
 });

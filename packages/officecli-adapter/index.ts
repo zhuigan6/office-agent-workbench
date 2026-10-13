@@ -6,21 +6,24 @@ import { AppError, validateWrite, type WriteRequest } from '../contracts/index.t
 
 export class OfficeCli {
   private checkedStamp = '';
+  private checkedDigest = '';
   private helpStamp = '';
   private helpBytes = 0;
   private helpCache = new Map<string, {stdout:string;stderr:string;code:number}>();
   private helpPending = new Map<string,Promise<{stdout:string;stderr:string;code:number}>>();
   constructor(public binary: string, public artifactRoot: string, private expectedSha256?: string) {}
   private async verifyEngine() {
-    const stat=await fs.stat(this.binary),stamp=`${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
-    if(this.expectedSha256){
-      if(stamp!==this.checkedStamp){
-        if(createHash('sha256').update(await fs.readFile(this.binary)).digest('hex')!==this.expectedSha256)
-          throw new AppError('ENGINE_VERSION_CHANGED','OfficeCLI differs from the pinned release. Restore the verified engine before editing files.',409);
-        this.checkedStamp=stamp;
-      }
+    const identity=async()=>{const resolved=await fs.realpath(this.binary),stat=await fs.stat(resolved,{bigint:true});return `${resolved}:${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}:${stat.birthtimeNs}`;};
+    const stamp=await identity();
+    if(stamp!==this.checkedStamp){
+      const digest=createHash('sha256').update(await fs.readFile(this.binary)).digest('hex');
+      if(await identity()!==stamp)throw new AppError('ENGINE_VERSION_CHANGED','OfficeCLI changed while its content was being verified.',409);
+      if(this.expectedSha256&&digest!==this.expectedSha256)
+        throw new AppError('ENGINE_VERSION_CHANGED','OfficeCLI differs from the pinned release. Restore the verified engine before editing files.',409);
+      this.checkedStamp=stamp;this.checkedDigest=digest;
     }
-    return stamp;
+    // Metadata prompts a recheck, but only verified bytes define help compatibility.
+    return this.checkedDigest;
   }
   async help(args: string[]) {
     if(args.length>4||args.some(value=>typeof value!=='string'||!/^[a-z0-9_-]{1,80}$/i.test(value)))throw new AppError('HELP_ARGUMENT','Use bounded static help arguments.');

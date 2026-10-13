@@ -6,12 +6,27 @@ function Resolve-OfficeTarget($entry,$data){
     else{return @{status='ambiguous-window';windowIds=$windows}}
     $session=$script:session+':'+$windowId
     if($entry.kind -eq 'excel'){
+        if($data.chartName){return @{status='resolved';selection=(Get-ExcelChartSelection $entry ([string]$data.sheet) ([string]$data.chartName) $session)}}
         $state=Read-Range $entry $data
         $json=ConvertTo-Json -InputObject $state -Depth 8 -Compress
         if($json.Length -gt 512000){throw 'TARGET_TOO_LARGE'}
-        return @{status='resolved';selection=@{kind='excel';hostSessionId=$session;sheet=$state.sheetName;range=$state.address;state=$state;preview=$json.Substring(0,[Math]::Min(4000,$json.Length));contentHash=(Hash-Text $json)}}
+        return @{status='resolved';selection=(Add-ExcelTableReference $entry @{kind='excel';hostSessionId=$session;sheet=$state.sheetName;range=$state.address;state=$state;preview=$json.Substring(0,[Math]::Min(4000,$json.Length));contentHash=(Hash-Text $json)})}
     }
     if($entry.kind -eq 'word'){
+        if($data.tableIndex){
+            $table=$entry.doc.Tables.Item([int]$data.tableIndex)
+            if($table.NestingLevel -ne 1 -or -not $table.Uniform -or $table.Rows.Count -gt 20 -or $table.Columns.Count -gt 20){throw 'WORD_ORDINARY_TABLE_REQUIRED'}
+            if($null -eq $data.row -and $null -eq $data.column){
+                $snapshot=Read-WordTableSnapshot $entry (Get-WordCellContentRange $table.Cell(1,1))
+                $ref=@{tableIndex=[int]$data.tableIndex;tableStart=$snapshot.start;rows=$snapshot.rows;columns=$snapshot.columns;hostSessionId=$session;revision=$snapshot.revision}
+                return @{status='resolved';selection=(Read-WordTableSelection $entry $ref)}
+            }
+            $cell=$table.Cell([int]$data.row,[int]$data.column);$range=Get-WordCellContentRange $cell
+            if($range.End -le $range.Start -or $range.End-$range.Start -gt 2000){throw 'WORD_NONEMPTY_CELL_REQUIRED'}
+            $null=Read-WordTableSnapshot $entry $range;$xml=[string]$range.WordOpenXML
+            $hash=Hash-Text ([string]$range.Start+'|'+$range.End+'|'+[string]$entry.doc.Content.Text+'|'+(Get-WordSemanticXml $xml))
+            return @{status='resolved';selection=@{kind='word';hostSessionId=$session;storyType=1;start=[int]$range.Start;end=[int]$range.End;preview=[string]$range.Text;contentHash=$hash;cell=@{tableIndex=[int]$data.tableIndex;row=[int]$data.row;column=[int]$data.column}}}
+        }
         $text=[string]$entry.doc.Content.Text;$needle=[string]$data.text
         if($text.Length -gt 1048576 -or $needle.Length -lt 1 -or $needle.Length -gt 2000){throw 'TARGET_TEXT_LIMIT'}
         $matches=[Collections.Generic.List[object]]::new();$offset=0
@@ -36,9 +51,15 @@ function Resolve-OfficeTarget($entry,$data){
     $selection=@{kind='powerpoint';hostSessionId=$session;slideId=[string]$slide.SlideID;shapeIds=@([string]$data.shapeId);preview='';contentHash=''}
     if($data.textStart){$selection.textStart=[int]$data.textStart;$selection.textLength=[int]$data.textLength}
     $shape=Resolve-PptShape $entry $selection
-    $selection.layoutRevision=(Read-PptLayout $entry $selection).contentHash
+    if(-not $data.textStart){try{$null=Read-PptAppearance $shape;$selection.appearanceProfileVersion=1}catch{}}
+    if($shape.HasTextFrame -ne 0 -and $shape.Type -in @(1,14,17)){try{$null=Read-PptTextFrame $shape;$selection.frameProfileVersion=1}catch{}}
+    try{$selection.layoutRevision=(Read-PptLayout $entry $selection).contentHash}catch{if(-not $selection.appearanceProfileVersion){throw};$selection.Remove('appearanceProfileVersion');$selection.layoutRevision=(Read-PptLayout $entry $selection).contentHash}
     if($shape.HasTextFrame -ne 0 -and $shape.TextFrame.TextRange.Length -gt 0 -and $shape.TextFrame.TextRange.Length -le 2000){
         $state=Read-PptFormat $entry $selection;$selection.contentHash=$state.contentHash
+        try{$selection.paragraphProfileVersion=1;$selection.replacementRevision=(Read-PptReplacement $entry $selection).contentHash}catch{
+            $selection.Remove('paragraphProfileVersion')
+            # This target can remain readable/formattable without replacement support.
+        }
         $selection.preview=([string]$state.state.text).Substring([int]$state.state.start-1,[int]$state.state.length)
     }else{
         if($data.textStart){throw 'PPT_TEXT_REQUIRED'}

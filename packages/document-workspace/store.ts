@@ -71,10 +71,15 @@ export class Store {
     return operation;
   }
   operations(): Operation[] { return this.db.prepare('SELECT body FROM operations ORDER BY rowid DESC LIMIT 500').all().map((r: any) => JSON.parse(r.body)); }
+  operationsForPrefix(prefix:string,documentId:string):Operation[]{
+    if(!prefix||prefix.length>200)throw new AppError('OPERATION_SCOPE','An explicit operation prefix is required.');
+    return this.db.prepare('SELECT body FROM operations WHERE doc=? AND id>=? AND id<? ORDER BY rowid DESC').all(documentId,prefix,prefix+'\uffff').map((r:any)=>JSON.parse(r.body));
+  }
   addGrant(token: string, doc: string, conversation: string) {
     this.db.prepare('INSERT INTO grants VALUES(?,?,?)').run(digest(token), doc, conversation);
   }
   grant(token: string) { return this.db.prepare('SELECT doc,conversation FROM grants WHERE hash=?').get(digest(token)) as {doc: string; conversation: string} | undefined; }
+  revokeGrant(token:string){this.db.prepare('DELETE FROM grants WHERE hash=?').run(digest(token));}
   linkConversation(id: string, doc: string, body: unknown) {
     this.db.prepare('INSERT INTO conversations VALUES(?,?,NULL,?) ON CONFLICT(id) DO UPDATE SET doc=excluded.doc,body=excluded.body')
       .run(id, doc, JSON.stringify(body));

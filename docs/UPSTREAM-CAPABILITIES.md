@@ -1,5 +1,79 @@
 # Upstream integration boundaries
 
+Batch envelope clarification,2026-10-11: the original element schema's parent
+label describes an object kind, not a literal document path. Workbench's shared
+MCP command schema now supplies canonical add/parent/type/props and set/path/props
+examples. This changes guidance only, not verb/property/filesystem authority.
+Six retained model pilot failures exposed the ambiguity; six corrected synthetic
+tasks then passed structured/format/native-object audit (BENCHMARK.md). No attempt
+was made to normalize or silently execute malformed model commands.
+
+## Stable engine refresh, 2026-10-11
+
+Original OfficeCLI1.0.156, commit699cafbc8f0b8a7841c6cca53dafd0c24e982f56, is now
+the active separately pinned engine. Asset digest AND official SHA256SUMS matched
+70b4e26695cf3197694fb10033a1035395480cad409581eff8ca029f198ed37f. Candidate
+complex1791715229484 passed two alternating paired rounds for all three formats:
+native structures/formula values, readback, validation and HTML preview. This
+is an engine regression/paired deterministic comparison, not an LLM benchmark.
+
+Config/lock/task plus consistent databases were backed up; original service was
+idle and stopped before pin/path changes, then restarted. Old1.0.152 binary and
+backup retained. The versioned new binary was moved within verified workspace
+boundaries instead of retaining a redundant33MB staging copy. All unrelated
+configuration fields were compared without logging secrets. Active service44808
+returned exact paragraph text/align help; three static help responses matched
+(live-help-cache1791715727769). Original8787/DeepSeek and global Codex/protected
+workbook hashes unchanged. No public V2 package/Release was produced.
+
+AionUi2.2.2/Core0.2.2 remain latest FORMAL releases checked today; original Core
+not replaced. AionUi remains a UI/reference upstream, not a secretly installed
+desktop renderer. Untagged main is not substituted for a reviewed stable engine.
+Candidate-lock verification never disables hash checks; Set-OfficeCliConfig requires
+offline primary installation, matched backup and current pin, preserving all other
+fields. Further command parity/runner/whole-task and frozen-package gates remain.
+
+## V2 Integration Check, 2026-10-10
+
+Installed Codex0.162.1 is now runtime-probed against its actual generated schema.
+Original Excel session resumed with verified child-only MCP scoping, and real
+model/approval/chart edit/UI restore passed after scoping. This is evidence for
+that workflow, not every native protocol/new release. User config SHA stayed
+unchanged. Startup diagnostics now distinguish safe launch/transport hints and
+setup stages; remaining long-run/cross-version coverage is still required.
+
+Original pinned OfficeCLI1.0.152 was used for a60-paragraph synthetic document:
+complete query120452 characters, budgeted output22173 characters with11 WHOLE
+objects and49 explicit omissions; original file SHA unchanged. Small inspections
+remain unchanged. This avoids sliced invalid JSON; original source stays available
+for smaller command-specific queries. Character counts are NOT token/cost or
+whole-task efficiency results. Native CLI query `--limit` was not assumed supported;
+the first probe failed and the passing read used the original plain selector.
+Rendered UI now selects an element/verb/property help topic via the existing
+original-engine help/cache/selectedHelp path. Actual paragraph text/align help,
+structured inspection nodes and partial-result warning passed in the production UI.
+
+The audit's bounded batch read/failure receipt and exact result handoff gaps now
+have implementation and real-engine/UI/MCP evidence. Batch reads carry original
+index/data under an aggregate budget; mutation chatter stays local. Full failed
+execution output remains in the journal, public failures identify failed steps,
+explicitly say no copy was published, and identical retries return the saved
+outcome without rerunning. Reported rollback is upstream state, not native Office
+undo; reads reflect their point in the staged batch, not necessarily final state.
+Task-file cards open exact IDs for inspect/preview/validation and consume one-shot
+intents. New uploads/copies broadcast file changes so live task lists refresh.
+Private test grant revocation was also accepted without touching other grants.
+Broader command/capability parity, cross-runner delivery, task-level performance
+comparisons and long-run acceptance still remain. Do not rebuild the engine or
+expose process/install/resident/file-path management as document permission.
+
+Native Codex file delivery now has an actual producer proof: original session,
+one approved office_file create, original parent task sees the same immutable
+file ID, exact paragraph readback passed. Existing parent/native files are shared
+by reference only after verifying the stored task/document binding; other scopes
+and chats are not moved. This covers Codex plus its bound task, not arbitrary
+external agents or full chat import. Pending wider runner/object cases remain.
+
 ## Stable upstream refresh, 2026-09-30
 
 OfficeCLI is now pinned to original release1.0.152, commit
@@ -41,6 +115,15 @@ unpinned fixture changes invalidate entries. Failures are not cached, output sta
 verbatim, and document reads/writes are never memoized. Original1.0.150 probe:
 cold1231.34ms; warm0.223ms and0.169ms, identical output. This only establishes
 static-help latency, not general task/token/billing superiority.
+
+2026-10-04/05 cache identity repair: resolved path, device/file identity and
+high-resolution size/time metadata trigger digest verification; engine bytes define
+help compatibility. Same-size/equal-time file replacements with new identity cannot
+reuse old help or bypass the pin; metadata-only changes with identical bytes no
+longer falsely report a version change. Identity changing during hashing is refused.
+Deterministic regressions and actual pinned1.0.152 two reads/one help execution passed
+(PROGRESS.md). This is NOT a binary update or in-place hot-swap mechanism; replace
+the pin/package with an offline upgrade and accept the new version independently.
 
 The pinned original OfficeCLI executable performs document edits. Workbench
 does not maintain a fork of its OOXML engine. Its original element schemas

@@ -3,7 +3,12 @@ import {Inspection,inspectionNodes} from './Inspection.tsx';
 
 export type Api = (route: string, data?: unknown) => Promise<any>;
 export type FileRecord = { id: string; name: string; extension: string; mediaType: string; size: number; sha256: string; createdAt: number; sourceId?: string;version?:number;rootId?:string };
-export type Catalog = { agents: { id: string; name: string; available: boolean; backend?: string }[]; providers: { id: string; name: string; platform: string; models: string[]; source: string }[] };
+export type FileOpenIntent={requestId:string;conversation:string;fileId:string;action:'inspect'|'preview'|'validate'};
+export function resolveFileIntent(intent:FileOpenIntent,conversation:string,files:FileRecord[]){
+  if(intent.conversation!==conversation)throw new Error('文件引用属于其他任务，未自动切换目标。');
+  const file=files.find(item=>item.id===intent.fileId);if(!file)throw new Error('指定版本的任务文件不可用，未按名称替换为其他文件。');return file;
+}
+export type Catalog = { agents: { id: string; name: string; available: boolean; backend?: string }[]; providers: { id: string; name: string; platform: string; models: string[]; source: string }[];agentDiscoveryFailed?:boolean };
 export function readableSize(size: number) { return size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`; }
 const failure = (e: unknown) => e instanceof Error ? e.message : String(e);
 
@@ -45,11 +50,14 @@ function Output({ value, depth = 0 }: { value: any; depth?: number }) {
   return <dl className="result-list">{entries.slice(0, 60).map(([key, item]) => <div key={key}><dt>{key}</dt><dd><Output value={item} depth={depth + 1} /></dd></div>)}{entries.length > 60 && <p>仅展示前 60 项；完整内容见高级原始结果。</p>}</dl>;
 }
 
-export function FileLibrary({ api, upload, download, previewImage, conversation, revision, attach }: { api: Api; upload: (files: File[], conversation?: string) => Promise<FileRecord[]>; download: (file: FileRecord) => Promise<void>; previewImage:(file:FileRecord)=>Promise<string>; conversation: string; revision: number; attach: (file: FileRecord) => void }) {
-  const [files, setFiles] = useState<FileRecord[]>([]), [scope, setScope] = useState('all'), [search, setSearch] = useState(''), [selected, setSelected] = useState<FileRecord | null>(null);
-  const [error, setError] = useState(''), [pending, setPending] = useState(false), [loading, setLoading] = useState(false), [refresh, setRefresh] = useState(0);
+export function FileLibrary({ api, upload, download, previewImage, conversation, revision, attach,requestedOpen,onOpenHandled }: { api: Api; upload: (files: File[], conversation?: string) => Promise<FileRecord[]>; download: (file: FileRecord) => Promise<void>; previewImage:(file:FileRecord)=>Promise<string>; conversation: string; revision: number; attach: (file: FileRecord) => void;requestedOpen?:FileOpenIntent|null;onOpenHandled?:(id:string)=>void }) {
+  const [files, setFiles] = useState<FileRecord[]>([]), [scope, setScope] = useState(requestedOpen?'task':'all'), [search, setSearch] = useState(''), [selected, setSelected] = useState<FileRecord | null>(null);
+  const [error, setError] = useState(''), [pending, setPending] = useState(false), [loading, setLoading] = useState(true), [refresh, setRefresh] = useState(0);
+  const generation=useRef(0),handledOpen=useRef('');
+  useEffect(()=>{generation.current++;setSelected(null);setResult(null);setHtml(null);setPending(false);return()=>{generation.current++;};},[conversation]);
   const [command, setCommand] = useState('view'), [args, setArgs] = useState('["outline"]'), [commands, setCommands] = useState('[]');
   const [mergeData,setMergeData]=useState('{}');
+  const [helpElement,setHelpElement]=useState(''),[helpVerb,setHelpVerb]=useState(''),[helpFields,setHelpFields]=useState('');
   const [dataFileId,setDataFileId]=useState(''),[importSheet,setImportSheet]=useState('/Sheet1'),[startCell,setStartCell]=useState('A1'),[header,setHeader]=useState(true),[delimiter,setDelimiter]=useState(''),[decimal,setDecimal]=useState('.');
   const [result, setResult] = useState<any>(null), [html, setHtml] = useState<string | null>(null);
   const [image,setImage]=useState<string|null>(null);
@@ -64,18 +72,32 @@ export function FileLibrary({ api, upload, download, previewImage, conversation,
     api('/api/files' + (scope === 'task' && conversation ? `?conversation=${encodeURIComponent(conversation)}` : '')).then(data => { if (alive) { setFiles(data); setError(''); } }).catch(e => { if (alive) setError(failure(e)); }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [api, conversation, scope, revision, refresh]);
-  async function run(action: () => Promise<void>) { if (pending) return; setPending(true); setError(''); try { await action(); } catch (e) { setError(failure(e)); } finally { setPending(false); } }
-  async function execute(action: 'inspect' | 'batch' | 'help' | 'preview' | 'merge' | 'import') {
-    if (!selected) return;
-    const payload: any = { fileId: selected.id, action, ...(action==='help'?{format:selected.extension}: {}) };
-    if (action === 'inspect') { const parsed = JSON.parse(args); if (!Array.isArray(parsed) || parsed.some(v => typeof v !== 'string')) throw new Error('参数必须是字符串数组，例如 ["Sheet1"]；不是 shell 命令。'); payload.command = command; payload.args = parsed; }
-    if(action==='inspect'&&selected.extension==='pdf'){payload.command='view';payload.args=['--start',pdfStart,'--end',pdfEnd];}
+  useEffect(()=>{setHelpElement('');setHelpVerb('');setHelpFields('');},[selected?.id]);
+  useEffect(()=>{
+    if(!requestedOpen||loading||pending||handledOpen.current===requestedOpen.requestId)return;
+    handledOpen.current=requestedOpen.requestId;onOpenHandled?.(requestedOpen.requestId);
+    try{const file=resolveFileIntent(requestedOpen,conversation,files);setSelected(file);setCommand('view');setArgs('["outline"]');void run(()=>execute(requestedOpen.action,file,true));}catch(e){setError(failure(e));}
+  },[requestedOpen,loading,pending,files,conversation,onOpenHandled]);
+  async function run(action: () => Promise<void>) { if (pending) return;const version=generation.current;setPending(true);setError(''); try { await action(); } catch (e) {if(version===generation.current){setError(failure(e));const receipt=(e as any)?.operation;if(receipt)setResult({status:'failed',operation:receipt,batch:receipt.batch});}} finally {if(version===generation.current)setPending(false);} }
+  async function execute(action: 'inspect' | 'batch' | 'help' | 'preview' | 'merge' | 'import'|'validate',target=selected,readDefaults=false) {
+    if (!target) return;const version=generation.current;
+    const payload: any = { fileId: target.id, action:action==='validate'?'inspect':action, ...(action==='help'?{format:target.extension}: {}) };
+    if(scope==='task'&&conversation)payload.conversationId=conversation;
+    if(action==='help'){
+      const topics=[helpElement.trim(),helpVerb.trim()].filter(Boolean);if(topics.length)payload.args=topics;
+      const fields=helpFields.split(',').map(field=>field.trim()).filter(Boolean);if(fields.length)payload.fields=fields;
+    }
+    if (action === 'inspect') { const parsed = readDefaults?['outline']:JSON.parse(args); if (!Array.isArray(parsed) || parsed.some(v => typeof v !== 'string')) throw new Error('参数必须是字符串数组，例如 ["Sheet1"]；不是 shell 命令。'); payload.command = readDefaults?'view':command; payload.args = parsed; }
+    if(action==='validate'){payload.command='validate';payload.args=[];}
+    if(action==='inspect'&&target.extension==='pdf'){payload.command='view';payload.args=['--start',pdfStart,'--end',pdfEnd];}
       if (action === 'batch') { const parsed = JSON.parse(commands); if (!Array.isArray(parsed) || !parsed.length || parsed.some(v => !v || typeof v !== 'object' || Array.isArray(v))) throw new Error('批量编辑需要非空 JSON 对象数组。请先查看命令帮助。'); payload.commands = parsed; payload.operationId = crypto.randomUUID(); }
       if(action==='merge'){payload.data=JSON.parse(mergeData);payload.operationId=crypto.randomUUID();}
       if(action==='import')Object.assign(payload,{dataFileId,sheet:importSheet,startCell,header,decimal,...(delimiter?{delimiter}:{}),operationId:crypto.randomUUID()});
     setResult(null); setHtml(null);setImage(null);
-    if(action==='preview'&&['png','jpg','jpeg'].includes(selected.extension)){setImage(await previewImage(selected));return;}
+    if(action==='preview'&&['png','jpg','jpeg'].includes(target.extension)){const url=await previewImage(target);if(version!==generation.current){URL.revokeObjectURL(url);return;}setImage(url);return;}
     const response = await api('/api/file-command', payload);
+    if(version!==generation.current)return;
+    if(['inspect','validate','preview','help'].includes(action)&&response.file&&response.file.id!==target.id)throw new Error('返回的文件引用不匹配，未自动切换到其他版本。');
     if (action === 'preview') { if (typeof response.output !== 'string') throw new Error('预览未返回 HTML。'); setHtml(response.output); } else setResult(response);
     if (response.file) { setSelected(response.file); setRefresh(v => v + 1); }
   }
@@ -88,12 +110,15 @@ export function FileLibrary({ api, upload, download, previewImage, conversation,
         {readable?<div className="inspect-controls">{officeFormat?<label>只读检查<select value={command} onChange={e => setCommand(e.target.value)}>{[['view', '查看内容'], ['get', '读取对象'], ['query', '查询'], ['validate', '验证文件'], ['raw', '原始结构'], ['dump', '完整结构']].map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></label>:<span>只读文本</span>}{selected.extension==='pdf'&&<><label>起始页<input aria-label="PDF 起始页" type="number" min="1" value={pdfStart} onChange={e=>setPdfStart(e.target.value)}/></label><label>结束页<input aria-label="PDF 结束页" type="number" min="1" value={pdfEnd} onChange={e=>setPdfEnd(e.target.value)}/></label></>}<button disabled={pending} onClick={() => void run(() => execute('inspect'))}>运行检查</button></div>:<p className="muted">此附件可以下载或交给支持该格式的智能体处理，不使用 Office 文档结构命令修改。</p>}
         {selected.extension==='pdf'&&<p className="muted">每次最多读取 5 页、24,000 字符的文本层。不包含 OCR；扫描件、图表及排版需另做视觉验收。</p>}
         {officeFormat&&<details className="advanced"><summary>高级检查参数</summary><label>字符串数组（不接受 shell 命令）<textarea aria-label="检查参数" spellCheck={false} value={args} onChange={e => setArgs(e.target.value)} /></label></details>}
+        {officeFormat&&<details className="advanced"><summary>按需查看上游命令帮助</summary><p>直接查询本机 OfficeCLI 的帮助，不另造文档操作。全部留空读取格式概览；指定元素或操作后，再选择需要的属性，减少无关说明。</p><div className="form-columns"><label>元素类型<input aria-label="帮助元素类型" maxLength={80} placeholder="例如 paragraph、table、cell" value={helpElement} onChange={e=>setHelpElement(e.target.value)}/></label><label>操作或主题<input aria-label="帮助操作或主题" maxLength={80} placeholder="可选，以原版帮助为准" value={helpVerb} onChange={e=>setHelpVerb(e.target.value)}/></label></div><label>属性名称（英文逗号分隔，最多 20 个）<input aria-label="帮助属性名称" maxLength={1600} placeholder="例如 text, align" value={helpFields} onChange={e=>setHelpFields(e.target.value)}/></label><button disabled={pending} onClick={()=>void run(()=>execute('help'))}>查询指定帮助</button></details>}
         {officeFormat&&<details className="advanced"><summary>在新副本上批量编辑</summary><p>原文件不会覆盖。先查看命令帮助，再输入 OfficeCLI 支持的命令对象数组。具体命令能力由本机 OfficeCLI 决定。</p><label>命令 JSON<textarea aria-label="命令 JSON" rows={7} spellCheck={false} value={commands} onChange={e => setCommands(e.target.value)} /></label><button className="primary" disabled={pending || commands.trim() === '[]'} onClick={() => void run(() => execute('batch'))}>执行并创建副本</button></details>}
           {pending && <p role="status">正在处理，请勿重复提交…</p>}
           {selected.extension==='xlsx'&&<details className="advanced"><summary>导入 CSV / TSV 到新版本</summary><p>先上传数据文件，再选择目标工作表。只修改新副本，不覆盖原工作簿。</p><label>数据文件<select aria-label="导入数据文件" value={dataFileId} onChange={e=>setDataFileId(e.target.value)}><option value="">选择已上传的 CSV / TSV</option>{files.filter(f=>['csv','tsv'].includes(f.extension)).map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label><div className="form-columns"><label>工作表路径<input aria-label="导入工作表" value={importSheet} onChange={e=>setImportSheet(e.target.value)}/></label><label>起始单元格<input aria-label="导入起始单元格" value={startCell} onChange={e=>setStartCell(e.target.value)}/></label><label>分隔符<select aria-label="导入分隔符" value={delimiter} onChange={e=>setDelimiter(e.target.value)}><option value="">按文件类型</option><option value=",">逗号</option><option value=";">分号</option><option value="|">竖线</option><option value={'\t'}>制表符</option></select></label><label>小数点<select aria-label="导入小数点" value={decimal} onChange={e=>setDecimal(e.target.value)}><option value=".">点号</option><option value=",">逗号</option></select></label></div><label><input type="checkbox" checked={header} onChange={e=>setHeader(e.target.checked)}/>首行为表头</label><button disabled={pending||!dataFileId} onClick={()=>void run(()=>execute('import'))}>导入到新版本</button></details>}
           {officeFormat&&<details className="advanced"><summary>填充模板并创建新版本</summary><p>替换模板内的 {'{{字段名}}'}。输入 JSON 字段和值，不填写磁盘路径；原模板保留。</p><textarea aria-label="模板数据 JSON" rows={5} value={mergeData} onChange={e=>setMergeData(e.target.value)}/><button disabled={pending||mergeData.trim()==='{}'} onClick={()=>void run(()=>execute('merge'))}>填充模板</button></details>}
         {image&&<div className="preview-panel"><div className="panel-heading"><strong>图片预览</strong><button onClick={()=>setImage(null)}>关闭预览</button></div><img alt={selected.name} src={image} style={{maxWidth:'100%',maxHeight:420,objectFit:'contain'}}/></div>}
         {html !== null && <div className="preview-panel"><div className="panel-heading"><strong>隔离预览</strong><button onClick={() => setHtml(null)}>关闭预览</button></div><iframe title={`${selected.name} 的安全预览`} srcDoc={html} sandbox="" referrerPolicy="no-referrer" /></div>}
+        {result?.truncated&&<p className="notice">结果过大，这里只返回部分内容，不代表整份文档已检查。{typeof result.output?.omittedResultCount==='number'&&<>已保留 {result.output.returnedResultCount} 个完整对象，另有 {result.output.omittedResultCount} 个对象未返回。</>}请按对象路径、范围、页码、深度或数量限制继续查询。</p>}
+        {result?.batch&&<section className="command-result" aria-label="批量执行回执"><h3>批量执行回执</h3><p>执行 {result.batch.summary.executed} 项，成功 {result.batch.summary.succeeded} 项，失败 {result.batch.summary.failed} 项，跳过 {result.batch.summary.skipped} 项。</p>{result.operation?.copyPublished===false&&<p className="notice">本批次没有发布新副本；原文件没有被本次批次覆盖。{result.operation.replayed===false?'本次只返回已有记录，没有重新执行。':''}</p>}{result.batch.upstreamReportedRollback===true&&<p className="muted">OfficeCLI 报告已回滚工作副本；这不是正在打开的 Office 文档撤销。</p>}{result.batch.failedSteps.map((step:any,i:number)=><p key={i}>上游失败索引 {step.index??'未知'}：{step.error}</p>)}{result.batch.omittedFailureSteps>0&&<p>另有 {result.batch.omittedFailureSteps} 项失败信息保留在本地记录。</p>}{result.batch.readResults.length>0&&<><p className="muted">以下读取结果对应命令执行当时的工作副本，不保证与最终文件相同。最终成品仍需检查。</p>{result.batch.readResults.map((read:any)=><details key={read.index}><summary>读取结果 · 索引 {read.index} · {read.command}</summary>{read.truncated&&<p className="notice">读取结果过大，仅返回部分完整内容，请缩小范围继续查询。</p>}<Output value={read.output}/></details>)}</>}{result.batch.omittedReadResults>0&&<p className="notice">另有 {result.batch.omittedReadResults} 个读取结果未返回，请对相应对象单独检查。</p>}</section>}
         {result && <section className="command-result" aria-live="polite"><h3>{result.status?.startsWith('created') ? '已生成独立副本' : '检查结果'}</h3>{result.changes&&<><h4>修改范围</h4><p>文档包内部：新增 {result.changes.added} 项，修改 {result.changes.modified} 项，删除 {result.changes.removed} 项，保持不变 {result.changes.unchanged} 项。</p><p className="muted">这是文档包结构对比，不等于版式或内容正确性验收；元数据变化也会计入。请结合预览和内容读回。</p><details><summary>查看变化部件</summary><Output value={result.changes.parts}/></details></>}<Output value={result.output} />{result.validation != null && <><h4>验证结果</h4><Output value={result.validation} /></>}<details className="advanced"><summary>高级原始结果</summary><pre>{JSON.stringify(result, null, 2)}</pre></details></section>}
         <details className="advanced"><summary>文件来源与校验</summary><dl><dt>文件 ID</dt><dd>{selected.id}</dd><dt>版本</dt><dd>{selected.version?`v${selected.version}（相对源文件的编辑代次）`:'旧记录：按来源链查看'}</dd><dt>SHA-256</dt><dd>{selected.sha256}</dd>{selected.sourceId && <><dt>来源文件</dt><dd>{selected.sourceId}</dd></>}{selected.rootId&&<><dt>原件 ID</dt><dd>{selected.rootId}</dd></>}</dl></details>
       </section> : <div className="empty-state"><h3>选择文件</h3><p>查看内容、下载或创建编辑副本。所有写入都与在线 Office 操作分开。</p></div>}
@@ -109,6 +134,7 @@ export function Settings({ api, catalog, reload, status }: { api: Api; catalog: 
   }
   return <section className="product-page settings-page"><div className="panel-heading"><div><h2>设置</h2><p>本机连接与任务默认值</p></div><button disabled={pending} onClick={() => { setError(''); void reload().catch(e => setError(failure(e))); }}>刷新状态</button></div>
     <section className="settings-section"><h3>运行环境</h3><p>{status?.coreReady ? 'AionCore 已就绪' : 'AionCore 尚未就绪'} · 默认模型：{status?.config?.model || status?.model || '由现有配置决定'}</p><p className="muted">外置工作台通过 Windows 本地连接器连接已打开的 Office 文档。智能体已检测到不等于其登录、额度和全部功能已经验证。</p>{catalog.agents.map(a => <div className="setting-row" key={a.id}><strong>{a.name}</strong><span>{a.available ? '已检测到' : '当前不可用'}{a.id !== 'aionrs' ? ' · 使用本机已有登录' : ''}</span></div>)}</section>
+    {catalog.agentDiscoveryFailed&&<p role="alert" className="notice">暂未读取到上游智能体目录。请刷新状态；这不代表本机智能体已卸载，也不影响已保留的聊天记录。</p>}
     <section className="settings-section"><h3>已配置服务商</h3>{catalog.providers.map(p => <div className="provider-row" key={p.id}><strong>{p.name}</strong><small>{p.platform} · {p.source}</small><p>{p.models.join('、') || '模型由现有配置决定'}</p></div>)}<p className="muted">配置存在不代表凭据、额度或所有模型已通过运行验证。</p></section>
     <form className="product-form settings-section" onSubmit={submit}><h3>添加服务商</h3><p className="muted">密钥仅发送给本机服务端，不回显、不写入浏览器存储。不会更改已有任务。</p><div className="form-columns"><label>名称<input name="name" required maxLength={100} /></label><label>协议<select name="platform"><option value="anthropic">Anthropic</option><option value="openai">OpenAI</option></select></label></div><label>API 地址<input name="baseUrl" type="url" required placeholder="https://api.example.com" /></label><label>API 密钥<input name="apiKey" type="password" autoComplete="off" required /></label><label>模型 ID（每行一个或逗号分隔）<textarea name="models" required rows={3} /></label><button className="primary" disabled={pending}>{pending ? '正在保存…' : '添加服务商'}</button></form>
     {error && <p className="error" role="alert">{error}</p>}{saved && <p className="notice" role="status">{saved}</p>}

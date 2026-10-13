@@ -25,6 +25,7 @@ export const nativePublicEventSchema = z.discriminatedUnion('kind', [
   z.object({ ...base, kind: z.literal('tool.result'), toolCallId: nativeIdSchema, text: text.optional(), data: z.unknown().optional() }).strict(),
   z.object({ ...base, kind: z.literal('turn.started'), turnId: nativeIdSchema }).strict(),
   z.object({ ...base, kind: z.literal('turn.completed'), turnId: nativeIdSchema }).strict(),
+  z.object({ ...base, kind: z.literal('turn.outcome'), turnId: nativeIdSchema, status:z.enum(['completed','failed','interrupted']),failureCode:z.enum(['WORKSPACE_ROUTING_TIMEOUT','VENDOR_TURN_FAILED']).optional() }).strict(),
   z.object({ ...base, kind: z.literal('owner.status'), status: z.enum(['active', 'uncertain', 'released']) }).strict(),
 ]);
 export const nativeMessageSchema = z.object({ messageId: nativeIdSchema, text: text.min(1) }).strict();
@@ -42,7 +43,7 @@ export interface NativeSessionLink extends NativeLinkInput {
   activeTurnId: string | null;
 }
 export interface NativeOutboundMessage {
-  messageId: string; text: string; state: 'queued' | 'unknown' | 'accepted' | 'completed';
+  messageId: string; text: string; state: 'queued' | 'unknown' | 'accepted' | 'completed' | 'interrupted' | 'cancelled';
   execution: NativeOwner | null; vendorRequestId: string | null; createdAt: number; updatedAt: number;
 }
 export interface NativeJournalEvent { seq: number; event: NativePublicEvent }

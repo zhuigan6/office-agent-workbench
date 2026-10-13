@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TaskDialog, FileLibrary, Settings, type Catalog, type FileRecord } from './Product.tsx';
+import { TaskDialog, FileLibrary, Settings, type Catalog, type FileRecord,type FileOpenIntent } from './Product.tsx';
 import {NativeDocuments} from './NativeDocuments.tsx';
 import {SelectionPreview} from './SelectionPreview.tsx';
 import {readDrafts,draftKey,emptyDraft,acknowledgeDraft,type Draft} from './drafts.ts';
@@ -14,6 +14,7 @@ import {TaskFiles} from './TaskFiles.tsx';
 import {HistoryArchives} from './Archives.tsx';
 import {NativeSessions} from './NativeSessions.tsx';
 import {messageText} from './message-text.ts';
+import {ApprovalDetails} from './ApprovalDetails.tsx';
 import './style.css';
 
 const supplied=new URLSearchParams(location.hash.slice(1)).get('token');
@@ -21,7 +22,7 @@ if(supplied){localStorage.setItem('workbench.token',supplied);history.replaceSta
 let token=localStorage.getItem('workbench.token') || '';
 async function api(route:string,data?:unknown){
   const res=await fetch(route,{method:data===undefined?'GET':'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});
-  const body=await res.json();if(!res.ok)throw new Error(body.message || '请求失败');return body;
+  const body=await res.json();if(!res.ok)throw Object.assign(new Error(body.message || '请求失败'),body.operation?{operation:body.operation}:{});return body;
 }
 const labels:Record<string,string>={queued:'排队中',running:'执行中',applied:'已验证',conflict:'有冲突',failed:'失败',unknown:'结果待确认'};
 async function downloadFile(file:Pick<FileRecord,'id'|'name'>){const response=await fetch(`/api/files/${file.id}/download`,{headers:{Authorization:`Bearer ${token}`}});if(!response.ok)throw new Error('下载失败');const object=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=object;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(object),5000);}
@@ -57,6 +58,8 @@ function App(){
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[stream,setStream]=useState('');
   const sending=useRef(new Set<string>());
   const preserveScroll=useRef(false);
+  const [fileOpen,setFileOpen]=useState<FileOpenIntent|null>(null);
+  useEffect(()=>setFileOpen(null),[active]);
   useEffect(()=>{try{sessionStorage.setItem(draftKey,JSON.stringify(drafts));}catch{setError('草稿暂时无法保存到浏览器；请保持窗口打开。');}},[drafts]);
   const [socketOnline,setSocketOnline]=useState(false);
   const [documentId,setDocumentId]=useState(''),[sheet,setSheet]=useState('Sheet1'),[range,setRange]=useState('A1:D12'),[preview,setPreview]=useState<any>(null),[artifact,setArtifact]=useState('');
@@ -113,6 +116,7 @@ function App(){
       ws.onmessage=async({data})=>{
         const msg=JSON.parse(data);
         if(msg.type==='error')setError(msg.message);
+        if(msg.type==='files.changed')setFileRevision(value=>value+1);
         if(msg.type==='core.event'){
           const event=msg.event;
           if(event.data?.conversation_id===activeRef.current){
@@ -165,12 +169,12 @@ function App(){
       {view==='native'&&<NativeSessions api={api}/>}
       {view==='archives'&&<HistoryArchives api={api} upload={async file=>{const response=await fetch('/api/archives?name='+encodeURIComponent(file.name),{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/octet-stream'},body:file});const result=await response.json();if(!response.ok)throw Error(result.message||'导入失败');return result;}}/>}
       {newTask&&<TaskDialog api={api} catalog={catalog} status={status} documentId={documentId} onClose={()=>setNewTask(false)} onCreate={id=>{setNewTask(false);setActive(id);setView('chat');void guard(refresh);}}/>}
-      {view==='files'&&<FileLibrary api={api} upload={uploadFiles} download={downloadFile} previewImage={previewImage} conversation={active} revision={fileRevision} attach={file=>{setAttachments(items=>items.some(f=>f.id===file.id)?items:[...items,file]);setView('chat');}}/>}
+      {view==='files'&&<FileLibrary requestedOpen={fileOpen} onOpenHandled={id=>setFileOpen(old=>old?.requestId===id?null:old)} api={api} upload={uploadFiles} download={downloadFile} previewImage={previewImage} conversation={active} revision={fileRevision} attach={file=>{setAttachments(items=>items.some(f=>f.id===file.id)?items:[...items,file]);setView('chat');}}/>}
       {view==='settings'&&<Settings api={api} catalog={catalog} reload={reloadCatalog} status={status}/>}
       {view==='documents'&&<NativeDocuments api={api} onConnect={async binding=>{setDocumentId(binding.documentId);await refresh();await reloadCatalog();setView('chat');setNewTask(true);}}/>}
       {view==='chat'&&<>
       <RuntimePanel conversation={active} api={api} prepare={command=>{if(content.trim()||attachments.length){setError('当前还有未发送的草稿或附件，请先处理；不会自动覆盖草稿。');return;}setContent(command);}}/>
-      <TaskFiles conversation={active} revision={fileRevision} busy={busy} api={api} download={downloadFile}/>
+      <TaskFiles conversation={active} revision={fileRevision} busy={busy} api={api} download={downloadFile} open={(file,action)=>{setFileOpen({requestId:crypto.randomUUID(),conversation:active,fileId:file.id,action});setView('files');}}/>
       {status?.selectionPreview&&selectedDoc?.startsWith('native:')&&<SelectionPreview key={active} conversation={active} enabled={Boolean(doc?.online)&&!busy} api={api} referenceId={selectionRefs[active]} onReference={id=>setSelectionRefs(old=>({...old,[active]:id || undefined}))}/>}
       {selectionRefs[active]&&<p role="status" className="notice">下一条消息已引用固定的 Office 选区。<button type="button" onClick={()=>setSelectionRefs(old=>({...old,[active]:undefined}))}>取消引用</button></p>}
       <section className={'document-card '+(documentPanel?'expanded':'')}><div className="document-top"><div className="file-icon">{doc?.kind==='word'?'W':doc?.kind==='powerpoint'?'P':'X'}</div><div className="document-name"><strong>{doc?.name || '文件任务 · 无在线文档'}</strong><small>{doc?.online?`${doc.kind} 已连接 · 写后校验`:doc?'文档离线，请在 Office 中打开并从文档页连接':'上传附件或从文件库选择文档'}</small></div><button className="subtle" onClick={()=>setDocumentPanel(!documentPanel)}>{documentPanel?'收起':'文档'}</button></div>
@@ -181,8 +185,8 @@ function App(){
         {hasOlder&&<button disabled={loadingOlder} onClick={()=>guard(loadOlder)}>{loadingOlder?'加载中…':'加载更早记录'}</button>}
         {messages.filter(m=>!m.hidden).map((m:any,i:number)=><Message key={m.id || m.msg_id || i} message={m}/>)}
         {stream&&!messages.some((m:any)=>m.type==='text'&&m.position==='left'&&stream.endsWith(messageText(m)))&&<article className="message assistant streaming"><div className="message-label">智能体 · 正在回复</div><div className="message-text">{stream}</div></article>}
-        {confirmations.map((c:any,i:number)=>Array.isArray(c.questions)&&c.questions.length?<QuestionCard key={c.call_id || i} item={c} submit={async body=>{await api(`/api/conversations/${active}/answer`,body);await refreshConversation(active);}}/>:<div className="approval" key={c.call_id || i}><strong>允许执行 {c.title || c.action || '此工具'}？</strong><p>{c.description}</p><button disabled={!c.msg_id||c.canAllow===false} onClick={()=>guard(async()=>{await api(`/api/conversations/${active}/confirm`,{callId:c.call_id || c.id,msgId:c.msg_id,allow:true});await refreshConversation(active);})}>允许这一次</button><button disabled={!c.msg_id||c.canDeny===false} onClick={()=>guard(async()=>{await api(`/api/conversations/${active}/confirm`,{callId:c.call_id || c.id,msgId:c.msg_id,allow:false});await refreshConversation(active);})}>拒绝</button></div>)}
-        {operations.filter(o=>o.documentId===selectedDoc).slice(0,8).reverse().map(o=><div className={'operation '+o.status} key={o.id}><span>{labels[o.status] || o.status}</span><strong>{o.kind==='excel.write'?`${o.payload?.sheet} ! ${o.payload?.range}`:o.payload?.target?.kind || o.kind}</strong><small>{o.result?.code || o.result?.message || o.kind}</small>{o.status==='applied'&&o.result?.before&&!o.id.startsWith('restore_')&&<button disabled={!doc?.online||busy} onClick={()=>{if(window.confirm('恢复这次操作之前的内容？只有目标仍与修改后的版本一致才会执行；不会覆盖后来人工修改的内容。'))void guard(async()=>{const result=await api('/api/restore',{operationId:o.id});if(result.status!=='applied')throw Error('未恢复：目标已变化或结果需检查。请查看操作记录，不要盲目重试。');await refresh();});}}>恢复本次修改</button>}</div>)}<div ref={lastMessage}/>
+        {confirmations.map((c:any,i:number)=>Array.isArray(c.questions)&&c.questions.length?<QuestionCard key={c.call_id || i} item={c} submit={async body=>{await api(`/api/conversations/${active}/answer`,body);await refreshConversation(active);}}/>:<div className="approval" key={c.call_id || i}><strong>允许执行 {c.title || c.action || '此工具'}？</strong><p>{c.description}</p><ApprovalDetails confirmation={c}/><button disabled={!c.msg_id||c.canAllow===false} onClick={()=>guard(async()=>{await api(`/api/conversations/${active}/confirm`,{callId:c.call_id || c.id,msgId:c.msg_id,allow:true});await refreshConversation(active);})}>允许这一次</button><button disabled={!c.msg_id||c.canDeny===false} onClick={()=>guard(async()=>{await api(`/api/conversations/${active}/confirm`,{callId:c.call_id || c.id,msgId:c.msg_id,allow:false});await refreshConversation(active);})}>拒绝</button></div>)}
+          {operations.filter(o=>o.documentId===selectedDoc).slice(0,8).reverse().map(o=><div className={'operation '+o.status} key={o.id}><span>{labels[o.status] || o.status}</span><strong>{o.kind==='excel.write'?`${o.payload?.sheet} ! ${o.payload?.range}`:o.payload?.target?.kind || o.kind}</strong><small>{o.result?.code || o.result?.message || o.kind}</small>{((o.status==='applied'&&o.result?.before)||o.result?.restoreAvailable)&&!o.id.startsWith('restore_')&&<button disabled={!doc?.online||busy} onClick={()=>{if(window.confirm('恢复这次操作之前的内容？只有目标仍与修改后的版本一致才会执行；不会覆盖后来人工修改的内容。批处理仅恢复已验证的步骤。'))void guard(async()=>{const result=await api('/api/restore',{operationId:o.id});if(result.status!=='applied')throw Error('未恢复：目标已变化或结果需检查。请查看操作记录，不要盲目重试。');await refresh();});}}>恢复本次修改</button>}</div>)}<div ref={lastMessage}/>
       </section>
       <form className="composer" onSubmit={e=>{e.preventDefault();void guard(send);}}>{attachments.length>0&&<div className="attachment-list">{attachments.map(f=><button type="button" key={f.id} onClick={()=>setAttachments(a=>a.filter(x=>x.id!==f.id))}>{f.name} ×</button>)}</div>}<textarea aria-label="任务消息" placeholder={active?'描述任务；上传文件后可在副本上修改。':'先创建任务'} value={content} disabled={!active} onChange={e=>setContent(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void guard(send);}}}/><div className="composer-footer"><label className="upload-button">{uploading?'上传中…':'＋ 附件'}<input aria-label="附加文件" type="file" multiple disabled={!active||uploading||busy} onChange={e=>{const chosen=Array.from(e.target.files || []);e.target.value='';setUploading(true);void guard(async()=>{const result=await uploadFiles(chosen,active);setAttachments(a=>[...a,...result]);setFileRevision(r=>r+1);}).finally(()=>setUploading(false));}}/></label><div>{busy&&<button type="button" className="subtle" onClick={()=>guard(async()=>{await api(`/api/conversations/${active}/cancel`,{});setBusy(false);})}>停止</button>}<button type="submit" disabled={!active||(!content.trim()&&!attachments.length)||busy||uploading}>发送 ↑</button></div></div></form>
       </>}

@@ -18,7 +18,10 @@ test('Word replacement refuses structural text, out-of-bound ranges and excess w
   const input={operationId:'replace',selection:{kind:'word',documentId:'doc',hostSessionId:'s:1',contentHash:'a'.repeat(64),preview:'text',storyType:1,start:0,end:4},text:'new'};
   assert.doesNotThrow(()=>wordReplaceSchema.parse(input));
   for(const text of ['line\nbreak','tab\t','cell\u0007'])assert.throws(()=>wordReplaceSchema.parse({...input,text}));
-  assert.throws(()=>wordReplaceSchema.parse({...input,selection:{...input.selection,end:0}}));
+  assert.doesNotThrow(()=>wordReplaceSchema.parse({...input,selection:{...input.selection,end:0}}));
+  assert.throws(()=>wordReplaceSchema.parse({...input,text:'',selection:{...input.selection,end:0}}));
+  assert.doesNotThrow(()=>wordReplaceSchema.parse({...input,selection:{...input.selection,end:0,cell:{tableIndex:1,row:1,column:1}}}));
+  assert.throws(()=>wordReplaceSchema.parse({...input,text:'',selection:{...input.selection,end:0,cell:{tableIndex:1,row:1,column:1}}}));
   assert.throws(()=>planTextSplices('a'.repeat(2001),'b'));
 });
 test('Word replacement retains paragraph restoration context, deduplicates and refuses stale targets',async()=>{

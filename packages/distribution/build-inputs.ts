@@ -5,6 +5,11 @@ export function assertBuildDestination(root:string,destination:string){
   const relative=path.relative(path.resolve(root),path.resolve(destination));
   if(!relative||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)&&relative.split(path.sep)[0]!=='.local'))throw Error('Build into a new .local staging directory or outside the source root, never a source/dependency folder.');
 }
+export async function ensureBuildParent(destination:string){
+  const parent=path.dirname(destination);
+  try{if(!(await fs.stat(parent)).isDirectory())throw Error('Build parent is not a directory.');}
+  catch(error:any){if(error.code!=='ENOENT')throw error;await fs.mkdir(parent,{recursive:true});}
+}
 
 export async function buildInputs(root:string,env:NodeJS.ProcessEnv){
   const explicit=[env.WORKBENCH_BUILD_AIONCORE,env.WORKBENCH_BUILD_OFFICECLI,env.WORKBENCH_BUILD_RESOURCES];

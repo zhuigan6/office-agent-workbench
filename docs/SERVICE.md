@@ -141,6 +141,18 @@ separate acceptance cases. Packages include the pinned engines, Node and `tsx`;
 see INSTALLATION.md for isolated startup, offline upgrade and rollback. A local
 package test is not a GitHub publication or a clean-machine guarantee.
 
+Native Codex setup errors now report a setup phase plus bounded startup state,
+transport failure category and classified stderr hints, not raw stderr/credentials.
+Document-bound child servers read effective MCP configuration, disable inherited
+configured servers using per-entry native overrides, retain the document relay,
+then verify effective enable flags. An empty `mcp_servers={}` override does NOT
+remove inherited entries and must not be used as an isolation claim. This changes
+only owned child processes, not the user's CLI home/config/account or ordinary CLI.
+Unsafe native override names/missing configuration fail explicitly. This is MCP
+configuration scoping, not a claim of sandboxing every builtin or plugin capability.
+Do not replay uncertain setup/document requests or call a few successful resumes
+proof of long-term reliability.
+
 On this machine repeated triggers while the verified instance is running can
 leave LastTaskResult=0x800710E0 even though the same supervisor/host PID remains
 healthy. The configured MultipleInstances policy is IgnoreNew. Do not classify

@@ -11,7 +11,7 @@ export async function formatWordSelection(broker:DocumentBroker,documentId:strin
 export async function restoreWordFormat(broker:DocumentBroker,id:string){
   const original=broker.store.getOperation(id),result=original?.result as any;
   if(!original||original.kind!=='word.format'||original.status!=='applied'||!result?.verified||!result.before||!result.revision||id.startsWith('restore_'))throw new AppError('RECOVERY_UNAVAILABLE','A verified original Word format edit is required.');
-  return execute(broker,original.documentId,'restore_'+digest(id).slice(0,48),{selection:result.before.selection,fields:result.before.fields,restore:result.before.formats,paragraphFields:result.before.paragraphFields??[],restoreParagraphFormats:result.before.paragraphs,expectedParagraphs:result.after?.paragraphs,expectedFingerprint:result.revision});
+  return execute(broker,original.documentId,'restore_'+digest(id).slice(0,48),{selection:result.before.selection,fields:result.before.fields,restore:result.before.formats,paragraphFields:result.before.paragraphFields??[],restoreParagraphFormats:result.before.paragraphs,expectedParagraphs:result.after?.paragraphs,expectedFingerprint:result.revision,...(result.before.table?{restoreTable:result.before.table,expectedTableHash:result.after?.table?.contentHash}:{})});
 }
 async function execute(broker:DocumentBroker,documentId:string,operationId:string,payload:any):Promise<Operation>{
   const {operation,fresh}=broker.store.begin(operationId,documentId,'word.format',payload);

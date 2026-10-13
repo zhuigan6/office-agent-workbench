@@ -17,6 +17,9 @@
 .native-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .native-actions button:first-child { background: var(--green); color: var(--paper); }
 .native-pages { display: flex; gap: 10px; }
+.native-layout-summary { margin: 10px 0; }
+.native-object-result { display: grid; gap: 5px; margin-top: 8px; padding: 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
+.native-color-swatch { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--muted); border-radius: 3px; margin: 0 5px; vertical-align: middle; }
 @media (max-width: 760px) {
   .native-create-grid { grid-template-columns: 1fr; }
   .native-message { padding: 14px; }

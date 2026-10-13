@@ -1,4 +1,21 @@
-# First public preview: 0.1.0-alpha.2
+# Current Development Preview: 0.2.0-alpha.1
+
+## Current publication decision, 2026-10-13
+
+The user authorized publishing all progress since alpha.2 now, then continuing
+V2 development. This is a prerelease checkpoint, NOT a completed second version.
+Current changes and acceptance limits are summarized in V2-STATUS.md; complete
+object-family limits remain in CAPABILITIES.md, with remaining work in V2-PLAN.md.
+The initial alpha.2 scope below is historical and does not reset delivered work.
+
+The current package pins OfficeCLI1.0.156/Core0.2.2 and contains no credentials,
+chat databases, certificates or user documents. Shared Codex document tools and
+bounded continuation/rich-edit workflows are now included. Native Claude TUI
+sharing, broader rich-edit/lifecycle, whole interactive efficiency, cross-machine
+and prolonged-use acceptance remain open. New-axis model/verified backend recovery
+and UI history are accepted, not its dedicated UI restore-click/baseline proof.
+
+## Historical first public preview: 0.1.0-alpha.2
 
 ## Scope decision, 2026-09-30
 

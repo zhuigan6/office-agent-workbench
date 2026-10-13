@@ -35,24 +35,56 @@ function Capture-OfficeSelection($entry) {
         'powerpoint' {$window=$entry.app.ActiveWindow;$active=$window.Presentation}
     }
     if($null -eq $active -or [string]$active.FullName -cne [string]$entry.doc.FullName){throw 'SELECTION_OTHER_DOCUMENT: Activate the bound document before capturing a selection.'}
-    $selection=if($entry.kind -eq 'powerpoint'){$window.Selection}else{$entry.app.Selection}
+    # An if-expression writes COM Range to the pipeline, which enumerates its
+    # cells. Direct assignment preserves one multi-cell selection object.
+    $selection=$null
+    if($entry.kind -eq 'powerpoint'){$selection=$window.Selection}else{$selection=$entry.app.Selection}
     $session=$script:session+':'+(Get-OfficeWindowIdentity $entry.kind $window)
     if($entry.kind -eq 'excel'){
+        $chart=$entry.app.ActiveChart
+        if($null -ne $chart){
+            $object=$chart.Parent
+            $null=Assert-ExcelChartSelectionScope $selection $chart $object
+            if([string]$object.Parent.Parent.FullName -cne [string]$entry.doc.FullName){throw 'SELECTION_OTHER_DOCUMENT'}
+            return Get-ExcelChartSelection $entry ([string]$object.Parent.Name) ([string]$object.Name) $session
+        }
         if($selection.Areas.Count -ne 1){throw 'SELECTION_UNSUPPORTED: Choose one contiguous cell range.'}
         $address=[string]$selection.Address($false,$false)
         $state=Read-Range $entry @{sheet=[string]$selection.Worksheet.Name;range=$address}
         $serialized=ConvertTo-Json -InputObject $state -Depth 8 -Compress
         if($serialized.Length -gt 512000){throw 'SELECTION_TOO_LARGE: Narrow the selected range.'}
-        return @{kind='excel';hostSessionId=$session;sheet=$state.sheetName;range=$address;state=$state;preview=$serialized.Substring(0,[Math]::Min(4000,$serialized.Length));contentHash=(Hash-Text $serialized)}
+        return Add-ExcelTableReference $entry @{kind='excel';hostSessionId=$session;sheet=$state.sheetName;range=$address;state=$state;preview=$serialized.Substring(0,[Math]::Min(4000,$serialized.Length));contentHash=(Hash-Text $serialized)}
     }
     if($entry.kind -eq 'word'){
         $range=$selection.Range.Duplicate
         if([int]$range.StoryType -ne 1){throw 'SELECTION_UNSUPPORTED: Non-body stories require a dedicated story anchor.'}
+        if($range.Tables.Count -eq 1){
+            $table=$range.Tables.Item(1)
+            if($range.Start -eq $table.Range.Start -and $range.End -eq $table.Range.End){
+                for($i=1;$i -le $entry.doc.Tables.Count;$i++){if($entry.doc.Tables.Item($i).Range.Start -eq $table.Range.Start){
+                    $snapshot=Read-WordTableSnapshot $entry (Get-WordCellContentRange $table.Cell(1,1))
+                    $ref=@{tableIndex=$i;tableStart=$snapshot.start;rows=$snapshot.rows;columns=$snapshot.columns;hostSessionId=$session;revision=$snapshot.revision}
+                    return Read-WordTableSelection $entry $ref
+                }}
+                throw 'WORD_TABLE_ID_UNAVAILABLE'
+            }
+        }
+        if($range.Tables.Count -eq 1 -and $range.Cells.Count -eq 1){
+            $cell=$range.Cells.Item(1)
+            if($range.Start -eq $cell.Range.Start -and $range.End -eq $cell.Range.End){$range=Get-WordCellContentRange $cell}
+        }
         $xml=[string]$range.WordOpenXML
         if($xml.Length -gt 1048576){throw 'SELECTION_TOO_LARGE: Narrow the selected range.'}
         $text=[string]$range.Text
         $fingerprint=Hash-Text ([string]$range.Start+'|'+$range.End+'|'+[string]$entry.doc.Content.Text+'|'+(Get-WordSemanticXml $xml))
-        return @{kind='word';hostSessionId=$session;storyType=[int]$range.StoryType;start=[int]$range.Start;end=[int]$range.End;preview=$text.Substring(0,[Math]::Min(4000,$text.Length));contentHash=$fingerprint}
+        $result=@{kind='word';hostSessionId=$session;storyType=[int]$range.StoryType;start=[int]$range.Start;end=[int]$range.End;preview=$text.Substring(0,[Math]::Min(4000,$text.Length));contentHash=$fingerprint}
+        if($range.Tables.Count -eq 1 -and $range.Cells.Count -eq 1){
+            $cell=$range.Cells.Item(1);$table=$range.Tables.Item(1)
+            for($i=1;$i -le $entry.doc.Tables.Count;$i++){if($entry.doc.Tables.Item($i).Range.Start -eq $table.Range.Start){
+                if($i -le 1000 -and $cell.RowIndex -le 20 -and $cell.ColumnIndex -le 20){$result.cell=@{tableIndex=$i;row=[int]$cell.RowIndex;column=[int]$cell.ColumnIndex}};break
+            }}
+        }
+        return $result
     }
     if([int]$selection.Type -eq 1){
         $slides=$selection.SlideRange
@@ -94,6 +126,34 @@ function Capture-OfficeSelection($entry) {
     $result=@{kind='powerpoint';hostSessionId=$session;slideId=[string]$slide.SlideID;shapeIds=$ids.ToArray();preview=$preview.Substring(0,[Math]::Min(4000,$preview.Length));contentHash=(Hash-Text ($fingerprints.ToArray() -join '|'))}
     if([int]$selection.Type -eq 3){$result.textStart=[int]$selection.TextRange.Start;$result.textLength=[int]$selection.TextRange.Length;$result.preview=[string]$selection.TextRange.Text;if($result.preview.Length -gt 4000){$result.preview=$result.preview.Substring(0,4000)}}
     if($ids.Count -eq 1 -and $shapes.Item(1).HasTextFrame -ne 0 -and $shapes.Item(1).TextFrame.TextRange.Length -gt 0 -and $shapes.Item(1).TextFrame.TextRange.Length -le 2000){$result.contentHash=(Read-PptFormat $entry $result).contentHash}
-    if($ids.Count -eq 1 -and $shapes.Item(1).Type -ne 6){$result.layoutRevision=(Read-PptLayout $entry $result).contentHash}
+    if($ids.Count -eq 1 -and $shapes.Item(1).Type -ne 6){
+        if([int]$selection.Type -eq 2){try{$null=Read-PptAppearance $shapes.Item(1);$result.appearanceProfileVersion=1}catch{}}
+        if($shapes.Item(1).HasTextFrame -ne 0 -and $shapes.Item(1).Type -in @(1,14,17)){try{$null=Read-PptTextFrame $shapes.Item(1);$result.frameProfileVersion=1}catch{}}
+        try{$result.layoutRevision=(Read-PptLayout $entry $result).contentHash}catch{if(-not $result.appearanceProfileVersion){throw};$result.Remove('appearanceProfileVersion');$result.layoutRevision=(Read-PptLayout $entry $result).contentHash}
+    }
+    if($ids.Count -eq 1){try{$result.paragraphProfileVersion=1;$result.replacementRevision=(Read-PptReplacement $entry $result).contentHash}catch{
+        $result.Remove('paragraphProfileVersion')
+        # Unsupported rich effects do not remove the existing read/format capability.
+    }}
+    if($ids.Count -gt 1 -and $ids.Count -le 20){
+        $layouts=[Collections.Generic.List[object]]::new()
+        for($i=1;$i -le $shapes.Count;$i++){
+            $shape=$shapes.Item($i)
+            if($shape.Type -eq 6){$layouts.Clear();break}
+            $single=@{kind='powerpoint';hostSessionId=$session;slideId=$result.slideId;shapeIds=@([string]$shape.Id)}
+            try{$null=Read-PptAppearance $shape;$single.appearanceProfileVersion=1}catch{}
+            if($shape.HasTextFrame -ne 0 -and $shape.Type -in @(1,14,17)){try{$null=Read-PptTextFrame $shape;$single.frameProfileVersion=1}catch{}}
+            try{$layout=(Read-PptLayout $entry $single).contentHash}catch{if(-not $single.appearanceProfileVersion){throw};$single.Remove('appearanceProfileVersion');$layout=(Read-PptLayout $entry $single).contentHash}
+            $textHash=$layout
+            if($shape.HasTextFrame -ne 0 -and $shape.TextFrame.TextRange.Length -gt 0 -and $shape.TextFrame.TextRange.Length -le 2000){$textHash=(Read-PptFormat $entry $single).contentHash}
+            $snapshot=@{shapeId=[string]$shape.Id;layoutRevision=$layout;contentHash=$textHash}
+            foreach($flag in @('frameProfileVersion','appearanceProfileVersion')){if($single[$flag]){$snapshot[$flag]=$single[$flag]}}
+            if($single.frameProfileVersion -eq 1 -and $shape.TextFrame.TextRange.Length -gt 0 -and $shape.TextFrame.TextRange.Length -le 2000){
+                try{$single.paragraphProfileVersion=1;$snapshot.replacementRevision=(Read-PptReplacement $entry $single).contentHash;$snapshot.paragraphProfileVersion=1}catch{}
+            }
+            $layouts.Add($snapshot)
+        }
+        if($layouts.Count -eq $ids.Count){$result.shapeLayouts=$layouts.ToArray()}
+    }
     return $result
 }

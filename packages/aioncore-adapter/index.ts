@@ -75,12 +75,19 @@ export class AionCore {
   }
   connectEvents() {
     if(this.stopping)return;
+    if(this.socket&&(this.socket.readyState===WebSocket.CONNECTING||this.socket.readyState===WebSocket.OPEN))return;
     const socket=new WebSocket(this.url.replace('http:','ws:')+'/ws',{headers:this.headers()});this.socket=socket;
+    socket.on('open',()=>{if(this.socket===socket&&!this.stopping)this.onEvent({name:'core.events.connected',data:null});});
     socket.on('message',raw=>{
+      if(this.socket!==socket||this.stopping)return;
       try{const event=JSON.parse(raw.toString());if(event.name==='ping')socket.send(JSON.stringify({name:'pong',data:null}));else this.onEvent(event);}catch{}
     });
     socket.on('error',()=>{});
-    socket.on('close',()=>{if(!this.stopping)setTimeout(()=>this.connectEvents(),2000).unref();});
+    socket.on('close',()=>{
+      if(this.socket!==socket)return;
+      this.socket=undefined;this.onEvent({name:'core.events.disconnected',data:null});
+      if(!this.stopping)setTimeout(()=>this.connectEvents(),2000).unref();
+    });
   }
   async stop() {
     this.stopping=true;this.monitor?.stop();this.socket?.close();

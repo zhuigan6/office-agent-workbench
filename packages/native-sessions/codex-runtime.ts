@@ -35,7 +35,7 @@ export async function findCodexLauncher(): Promise<string> {
   throw new AppError('CODEX_NOT_FOUND', 'The installed official Codex npm launcher was not found on PATH.', 503);
 }
 
-export async function inspectCodexRuntime(launcher: string, evidenceRoot: string) {
+export async function inspectCodexRuntime(launcher: string, evidenceRoot: string, workingDirectory?:string) {
   if (!path.isAbsolute(launcher) || path.basename(launcher) !== 'codex.js') throw new AppError('NATIVE_INVALID_INPUT', 'An absolute installed Codex launcher is required.');
   const real = await fs.realpath(launcher);
   const metadata = JSON.parse(await fs.readFile(path.join(path.dirname(real), '..', 'package.json'), 'utf8'));
@@ -45,7 +45,7 @@ export async function inspectCodexRuntime(launcher: string, evidenceRoot: string
   const directory = await fs.mkdtemp(path.join(evidenceRoot, 'codex-compatibility-'));
   const schemaDirectory = path.join(directory, 'schema');
   await execute(process.execPath, [real, 'app-server', 'generate-json-schema', '--experimental', '--out', schemaDirectory], {
-    cwd: directory, windowsHide: true, timeout: 30_000, maxBuffer: 64 * 1024,
+    cwd: workingDirectory??directory, windowsHide: true, timeout: 30_000, maxBuffer: 64 * 1024,
   });
   const read = async (name: string) => {
     const file = path.join(schemaDirectory, name);

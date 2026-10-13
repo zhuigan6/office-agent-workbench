@@ -3,12 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {buildInputs,assertBuildDestination} from '../packages/distribution/build-inputs.ts';
+import {buildInputs,assertBuildDestination,ensureBuildParent} from '../packages/distribution/build-inputs.ts';
 test('build destinations cannot recursively copy source or dependency trees into themselves',()=>{
   const root=path.resolve('fixture-root');
   for(const target of [root,path.join(root,'apps/new'),path.join(root,'node_modules/new'),path.join(root,'packages/new')])assert.throws(()=>assertBuildDestination(root,target));
   assert.doesNotThrow(()=>assertBuildDestination(root,path.join(root,'.local/new')));
   assert.doesNotThrow(()=>assertBuildDestination(root,path.resolve('fixture-output')));
+});
+test('existing build parent, including Windows drive root, is not recreated',async context=>{
+  const mkdir=context.mock.method(fs,'mkdir',async()=>{throw Error('Existing parent must not be recreated');});
+  await ensureBuildParent(path.join(path.parse(process.cwd()).root,'new-owned-package'));
+  assert.equal(mkdir.mock.calls.length,0);
 });
 test('clean build inputs need no private config and reject partial configuration or escaping resources',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'workbench-build-inputs-'));

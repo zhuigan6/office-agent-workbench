@@ -71,6 +71,16 @@ test('loss after dispatch preserves unknown outcome and never resends on reconne
     await assert.rejects(f.session.send('m', 'hello')); assert.equal(f.peer.calls.length, 2);
   } finally { f.session.disconnect(); f.db.close(); }
 });
+test('interrupted vendor turn settles its receipt without claiming success or allowing redispatch',async()=>{
+  const f=fixture();try{
+    await f.session.resume();await f.session.send('m1','hello');
+    f.peer.event('turn/started',{turn:{id:'turn'}});
+    f.peer.event('item/completed',{turnId:'turn',item:{type:'userMessage',id:'user1',clientId:'m1',content:[{type:'text',text:'hello'}]}});
+    f.peer.event('turn/completed',{turn:{id:'turn',status:'interrupted'}});
+    assert.equal(f.store.message('link','owner','m1').state,'interrupted');assert.equal(f.store.hasPending('link','owner'),false);
+    assert.equal((await f.session.send('m1','hello')).state,'interrupted');assert.equal(f.peer.calls.filter(c=>c.method==='thread/queue/add').length,1);
+  }finally{f.session.disconnect();f.db.close();}
+});
 
 test('fresh owned thread/start acknowledgement attaches without resuming an unpersisted empty thread', () => {
   const f = fixture(); try {

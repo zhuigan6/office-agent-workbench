@@ -24,12 +24,37 @@ test('upload rejects traversal, mismatched Office packages and invalid image sig
   assert.throws(()=>validateFile('macro.xlsx',Buffer.from(zipSync({'[Content_Types].xml':strToU8('x'),'xl/workbook.xml':strToU8('x'),'xl/vbaProject.bin':strToU8('x')}))));
   assert.equal(validateFile('测试.xlsx',workbook()),'xlsx');
 });
+test('original engine structured inspection remains renderable when its output exceeds the model budget',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'workbench-inspection-')),store=new Store(':memory:');
+  const rows=Array.from({length:100},(_,i)=>({path:'/Sheet1/A'+(i+1),type:'cell',text:'x'.repeat(1000)}));
+  const fake={async run(args:string[]){assert.equal(args[0],'query');assert.equal(args.at(-1),'--json');return {code:0,stdout:JSON.stringify({success:true,data:{results:rows}}),stderr:''};}} as OfficeCli;
+  try{const workspace=new FileWorkspace(store,root,fake),file=await workspace.put('input.xlsx',workbook());workspace.attach('task',file.id);
+    const result:any=await workspace.command({action:'inspect',command:'query',fileId:file.id,args:['cell']},'task');assert.equal(result.truncated,true);assert.equal(typeof result.output,'object');assert.ok(result.output.data.results.length>0);assert.ok(JSON.stringify(result.output).length<=24000);assert.ok(result.narrowing);assert.deepEqual(result.output.data.results,rows.slice(0,result.output.returnedResultCount));
+  }finally{store.close();await fs.rm(root,{recursive:true,force:true});}
+});
 test('batch excludes process control, file overrides and arbitrary asset paths',()=>{
   assert.throws(()=>validateBatch([{command:'install'}]));
   assert.throws(()=>validateBatch([{command:'set',file:'C:/private.xlsx',path:'/'}]));
   assert.throws(()=>validateBatch([{command:'add',parent:'/',props:{src:'C:/private.png'}}]));
   assert.throws(()=>validateBatch([{command:'remove',path:'../../private'}]));
   assert.equal(validateBatch([{command:'set',path:'/Sheet1/A1',props:{value:'42'}}]).length,1);
+});
+test('failed staged batches retain full local evidence and compact receipts without replay or publishing',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'workbench-batch-failure-')),store=new Store(':memory:');let batches=0;
+  const output={success:false,data:{summary:{total:2,executed:2,succeeded:1,failed:1,skipped:0,atomicRolledBack:true},results:[{index:0,success:true,output:'local-first-step'},{index:1,success:false,error:'failure '+('x'.repeat(6000)),code:'not_found'}]}};
+  const fake={async run(args:string[]){assert.equal(args[0],'batch');batches++;return {code:1,stdout:JSON.stringify(output),stderr:''};}} as OfficeCli;
+  try{const files=new FileWorkspace(store,root,fake),original=workbook(),file=await files.put('source.xlsx',original);files.attach('task',file.id);
+    const request={action:'batch',fileId:file.id,operationId:'fail',commands:[{command:'set',path:'/Sheet1/A1',props:{value:'1'}},{command:'set',path:'/Sheet1/A2',props:{value:'2'}}]};
+    await assert.rejects(files.command(request,'task'),(e:any)=>{assert.equal(e.code,'BATCH_FAILED');assert.equal(e.receipt.copyPublished,false);assert.equal(e.receipt.batch.failedSteps[0].index,1);assert.ok(JSON.stringify(e.receipt).length<2000);return true;});
+    assert.deepEqual((store.getOperation('task_fail')!.result as any).execution.output,output);assert.equal(files.list('task').length,1);assert.deepEqual(await fs.readFile(files.filename(file.id)),original);
+    await assert.rejects(files.command(request,'task'),(e:any)=>{assert.equal(e.code,'OPERATION_STATE');assert.equal(e.receipt.replayed,false);return true;});assert.equal(batches,1);assert.equal((await fs.readdir(root)).some(name=>name.startsWith('working-')),false);
+  }finally{store.close();await fs.rm(root,{recursive:true,force:true});}
+});
+test('a failed step cannot publish a copy even if a corrupt summary reports zero failures',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'workbench-batch-count-')),store=new Store(':memory:');
+  const fake={async run(_args:string[]){return {code:0,stdout:JSON.stringify({success:true,data:{summary:{total:1,executed:1,succeeded:1,failed:0,skipped:0},results:[{index:0,success:false,error:'actual failure'}]}}),stderr:''};}} as OfficeCli;
+  try{const files=new FileWorkspace(store,root,fake),file=await files.put('source.xlsx',workbook());await assert.rejects(files.command({action:'batch',fileId:file.id,operationId:'bad-count',commands:[{command:'get',path:'/'}]}),{code:'BATCH_FAILED'});assert.equal(files.list().length,1);
+  }finally{store.close();await fs.rm(root,{recursive:true,force:true});}
 });
 test('file scope, immutable copies, failed duplicate handling and content tampering',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'workbench-files-')),store=new Store(':memory:');let batches=0;

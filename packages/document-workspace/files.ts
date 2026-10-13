@@ -11,6 +11,8 @@ import {packageChanges} from './changes.ts';
 import {selectedHelp} from '../contracts/file-help.ts';
 import {importOptions} from './import-options.ts';
 import {assertLiteralCsv} from './csv-safety.ts';
+import {boundedInspection} from '../contracts/inspection-output.ts';
+import {batchEvidence,FileBatchError} from '../contracts/file-batch.ts';
 
 const mime:Record<string,string>={docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',pdf:'application/pdf',txt:'text/plain',md:'text/markdown',csv:'text/csv',tsv:'text/tab-separated-values'};
 const officeKinds=['docx','xlsx','pptx'];
@@ -116,7 +118,7 @@ export class FileWorkspace {
     const result=await this.engine.run([command,filename,...args,'--json']);
     if(result.code!==0)throw new AppError('ENGINE_FAILED',(result.stderr||result.stdout).slice(0,2000),422);
     let output:any;try{output=JSON.parse(result.stdout);}catch{output=result.stdout;}
-    const encoded=JSON.stringify(output);return {file,output:encoded.length>24000?encoded.slice(0,24000):output,truncated:encoded.length>24000};
+    return {file,...boundedInspection(output)};
   }
   async mutate(request:any,scope?:string){
     if(typeof request.operationId!=='string'||!/^[\w-]{1,100}$/.test(request.operationId))throw new AppError('OPERATION_REQUIRED','Supply a unique operationId for creation or edits.');
@@ -135,9 +137,10 @@ export class FileWorkspace {
     if(request.commands)validateBatch(request.commands);
     const id=scope?`${scope}_${request.operationId}`:request.operationId;
     const started=this.store.begin(id,request.fileId || 'new-file',`file.${request.action}`,request);
-    if(!started.fresh){if(started.operation.status==='applied')return started.operation.result;throw new AppError('OPERATION_STATE',`Operation is ${started.operation.status}; inspect its existing result before retrying.`,409);}
+    if(!started.fresh){if(started.operation.status==='applied')return started.operation.result;const saved=started.operation.result as any;if(saved?.receipt)throw new FileBatchError({...saved.receipt,replayed:false},'OPERATION_STATE',409);throw new AppError('OPERATION_STATE',`Operation is ${started.operation.status}; inspect its existing result before retrying.`,409);}
     const temporary=path.join(this.root,`working-${randomUUID()}.${extension}`);
     const mergeData=temporary+'.merge.json';
+    let execution:any;
     try{
       this.store.updateOperation(id,'running',null);await fs.mkdir(this.root,{recursive:true});
       if(request.action==='create'){
@@ -167,8 +170,10 @@ export class FileWorkspace {
           if(scope)this.requireAccess(scope,asset.id);item.props[key]=asset.prefix+await this.checkedFile(asset.id);
         }
         const batch=await this.engine.run(['batch',temporary,'--json'],JSON.stringify(commands));
-        try{output=JSON.parse(batch.stdout);}catch{throw new AppError('ENGINE_RESPONSE','OfficeCLI did not return a batch result.',502);}
-        if(batch.code!==0||output.success===false||output.data?.summary?.failed>0)throw new AppError('BATCH_FAILED',JSON.stringify(output).slice(0,2000),422);
+        execution={exitCode:batch.code,commands:commands.map(item=>item.command)};
+        try{output=JSON.parse(batch.stdout);}catch{execution.responseFormat='non-json';execution.rawOutput=batch.stdout;execution.stderr=batch.stderr;throw new AppError('ENGINE_RESPONSE','OfficeCLI did not return a batch result.',502);}
+        execution.output=output;
+        if(batch.code!==0||output.success===false||output.data?.summary?.failed>0||(Array.isArray(output.data?.results)&&output.data.results.some((row:any)=>row.success===false)))throw new FileBatchError({operationId:id,status:'failed',copyPublished:false,...(batchEvidence(execution)?{batch:batchEvidence(execution)}:{})});
       }else if(request.action==='batch')throw new AppError('BATCH_REQUIRED','Provide structured batch commands.');
       const validation=await this.engine.run(['validate',temporary,'--json']);
       let validated:any;try{validated=JSON.parse(validation.stdout);}catch{validated={raw:validation.stdout};}
@@ -178,9 +183,9 @@ export class FileWorkspace {
       const bytes=await fs.readFile(temporary);
       const changes=packageChanges(original?await fs.readFile(await this.checkedFile(original.id)):undefined,bytes);
       const file=await this.put(name,bytes,original?.id);if(scope)this.attach(scope,file.id);
-      const result={file,output,changes,validation:{exitCode:validation.code,result:validated},status:validation.code===0?'created':'created-with-validation-issues'};
+      const result={file,output,changes,...(execution?{execution,batch:batchEvidence(execution)}:{}),validation:{exitCode:validation.code,result:validated},status:validation.code===0?'created':'created-with-validation-issues'};
       this.store.updateOperation(id,'applied',result);return result;
-    }catch(error){this.store.updateOperation(id,'failed',{message:error instanceof Error?error.message:String(error)});throw error;}
+    }catch(error){this.store.updateOperation(id,'failed',{message:error instanceof Error?error.message:String(error),...(execution?{execution}:{}),...(error instanceof FileBatchError?{receipt:error.receipt}:{})});throw error;}
     finally {await fs.unlink(temporary).catch(()=>{});if(request.action==='merge')await fs.unlink(mergeData).catch(()=>{});}
   }
 }

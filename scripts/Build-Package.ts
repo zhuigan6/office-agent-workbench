@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {filesBelow,sha256,verifyPackage,type Manifest} from '../packages/distribution/index.ts';
-import {buildInputs,assertBuildDestination} from '../packages/distribution/build-inputs.ts';
+import {buildInputs,assertBuildDestination,ensureBuildParent} from '../packages/distribution/build-inputs.ts';
+import {packageVerificationScripts} from '../packages/distribution/verification-inputs.ts';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const destination=path.resolve(process.argv[2] || path.join(root,'.local','packages','build-'+Date.now()));
@@ -15,7 +16,7 @@ if(sha256(await fs.readFile(inputs.officecli))!==lock.officecli.binarySha256)thr
 if(sha256(await fs.readFile(inputs.aioncore))!==lock.aioncore.binarySha256)throw Error('AionCore does not match pinned binary');
 const resources=inputs.resources;
 await fs.access(path.join(resources,'manifest.json'));
-await fs.mkdir(path.dirname(destination),{recursive:true});
+await ensureBuildParent(destination);
 await fs.mkdir(destination,{recursive:false});
 async function copy(source:string,target:string){
   const stat=await fs.lstat(source);
@@ -37,7 +38,7 @@ for(const name of await filesBelow(path.join(root,'docs'))){
   if(name==='PROGRESS.md')continue;
   await copy(path.join(root,'docs',name),path.join(destination,'docs',name));
 }
-for(const name of ['Start-Service.ps1','Stop-Service.ps1','Install-Service.ps1','Initialize-Local.ps1','Open-Workbench.ps1','Start-NativeTerminal.ps1','Inspect-OfficeWindows.ps1','Manage-Package.ts','Protect-Data.ps1','Renew-Certificate.ps1','Rotate-UiToken.ts','Verify-ComplexDocuments.ts','Verify-Templates.ts','Verify-DataImport.ts'])await copy(path.join(root,'scripts',name),path.join(destination,'scripts',name));
+for(const name of new Set(['Start-Service.ps1','Stop-Service.ps1','Install-Service.ps1','Initialize-Local.ps1','Open-Workbench.ps1','Start-NativeTerminal.ps1','Inspect-OfficeWindows.ps1','Manage-Package.ts','Protect-Data.ps1','Renew-Certificate.ps1','Rotate-UiToken.ts','Verify-ComplexDocuments.ts','Verify-Templates.ts','Verify-DataImport.ts',...packageVerificationScripts]))await copy(path.join(root,'scripts',name),path.join(destination,'scripts',name));
 await copy(path.join(root,'LICENSE'),path.join(destination,'LICENSE'));
 await copy(process.execPath,path.join(destination,'runtime/node/node.exe'));
 await copy(inputs.aioncore,path.join(destination,'runtime/aioncore/aioncore.exe'));

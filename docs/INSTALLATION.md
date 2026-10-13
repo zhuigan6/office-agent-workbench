@@ -57,6 +57,12 @@ only its `.db` file.
 
 ## Certificate renewal
 
+While the service is running, `scripts/Renew-Certificate.ps1 -CheckOnly` reports
+expiry, localhost/config/public certificate identity and CurrentUser trust. It
+does not stop services, import trust, generate a key or change files. A valid
+status is not unattended renewal: actual replacement still requires an idle,
+offline service and may require the user's trust confirmation.
+
 Certificates are valid for three months. With the service stopped, run
 `scripts/Renew-Certificate.ps1`; it renews inside the last 21 days. `-Force` is
 for a controlled renewal test. Existing credentials and data stay unchanged;

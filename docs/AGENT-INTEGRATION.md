@@ -1,5 +1,9 @@
 # Agent entrypoints and first-release implementation plan
 
+Current scope update: alpha.2 is published. The user explicitly deferred unfinished
+large blocks to subsequent versions. V2-PLAN.md now governs execution priorities;
+the original first-release requirement wording below is historical design context.
+
 Decision update: 2026-09-29. These are REQUIRED workstreams, not optional scope
 cuts. Existing candidate packages predate completion of these requirements.
 
@@ -47,6 +51,37 @@ release preparation. User participation is limited to personal authorization,
 second-machine availability and final usage acceptance. A privately shared
 pre-release installer can support second-machine testing BEFORE public GitHub release.
 Second release adds Claude independent continuity and user macros/OCR/PPT Skills.
+
+## Current V2 evidence, 2026-10-13
+
+The maintained Core native Claude adapter is already reused and accepted for
+managed document help/read, exact event-ID approval parameters, and same-vendor
+session resume after Workbench restart. Actual owned runner was npm2.1.296, not
+the older native2.1.145 also installed. See PROGRESS.md for retained failures,
+exact reports and limits; managed continuation is not native-TUI shared execution.
+
+New [Claude agent view](https://code.claude.com/docs/en/agent-view) provides public
+`agents --json --cwd <owned-workspace>` status and `attach <id>` for vendor-owned
+background sessions. Prefer those interfaces to private jobs-file parsing or
+terminal scraping. Background state inventory alone does not supply structured
+chat/approval/send transport. Local --bg help warns that resuming a running
+session can create a copy: do not silently fork the original Core session or run
+two execution owners. Probe actual CLI/version independently before enabling any
+handoff. No supervisor or global hooks are installed by these checks; no native
+Claude background session has been launched or accepted yet.
+
+`Inspect-ClaudeEntrypoints.ts <exact-claude.exe> <owned-workspace>` compares the
+selected binary hash/version before and after public help/inventory calls. It
+does not resume, attach, launch a session or read private jobs/transcripts. Both
+installed2.1.145 and2.1.296 exposed inventory/attach help, but only newer main help
+advertised --bg. Presence is interface evidence, not a successful native handoff.
+
+Official agent view states --bg and SDK -p are incompatible. Its separate
+[cross-session inbox](https://code.claude.com/docs/en/cross-session-messaging)
+supports authenticated peer message delivery on Windows, not shared complete
+transcripts/approvals. Neither route is silently substituted for same-session
+UI/TUI continuity. Missing public send/event bridge remains a concrete integration
+gap, not proof that Claude native continuity is fundamentally impossible.
 
 ## Native Codex transport evidence, 2026-09-30
 

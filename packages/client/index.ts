@@ -7,7 +7,7 @@ export class ClientError extends Error {
 
 export interface RequestData {
   url: URL;
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'DELETE';
   headers: Record<string, string>;
   body?: Buffer;
   ca: string;
@@ -17,7 +17,9 @@ export type Transport = (request: RequestData) => Promise<{ status: number; body
 
 export const httpsTransport: Transport = ({ url, method, headers, body, ca, timeoutMs }) =>
   new Promise((resolve, reject) => {
-    const req = https.request(url, { method, headers, ca, rejectUnauthorized: true }, res => {
+    const outgoingHeaders={...headers};
+    if(body!==undefined&&!Object.keys(headers).some(key=>['content-length','transfer-encoding'].includes(key.toLowerCase())))outgoingHeaders['Content-Length']=String(body.length);
+    const req = https.request(url, { method, headers:outgoingHeaders, ca, rejectUnauthorized: true }, res => {
       const chunks: Buffer[] = [];
       let size = 0;
       res.on('data', (chunk: Buffer) => {

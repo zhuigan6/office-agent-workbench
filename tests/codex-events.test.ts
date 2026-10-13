@@ -37,3 +37,16 @@ test('turn identity is mapped without copying private turn content', () => {
     assert.equal(event[0].kind, 'turn.' + phase); assert.equal(JSON.stringify(event).includes('PRIVATE'), false);
   }
 });
+
+test('terminal outcomes distinguish failure/interruption without changing old completion identity or exposing error text',()=>{
+  const legacy=codexPublicEvents('native',{method:'turn/completed',params:{threadId:'native',turn:{id:'turn1'}}});
+  for(const status of ['completed','failed','interrupted']){
+    const events=codexPublicEvents('native',{method:'turn/completed',params:{threadId:'native',turn:{id:'turn1',status,error:{message:'PRIVATE credential or reasoning',rawResponse:'PRIVATE'}}}});
+    assert.deepEqual(events[0],legacy[0]);assert.equal(events.length,2);assert.equal(events[1].kind,'turn.outcome');assert.equal((events[1] as any).status,status);assert.notEqual(events[0].vendorEventId,events[1].vendorEventId);assert.ok(!JSON.stringify(events).includes('PRIVATE'));
+  }
+  const unknown=codexPublicEvents('native',{method:'turn/completed',params:{threadId:'native',turn:{id:'turn1',status:'new-vendor-status'}}});assert.deepEqual(unknown,legacy);
+});
+test('workspace-routing failure is classified from exact public vendor error, not arbitrary secret messages',()=>{
+  const project=(message:string)=>codexPublicEvents('native',{method:'turn/completed',params:{threadId:'native',turn:{id:'turn1',status:'failed',error:{message,additionalDetails:'PRIVATE'}}}})[1] as any;
+  assert.equal(project('workspace routing discovery timed out').failureCode,'WORKSPACE_ROUTING_TIMEOUT');assert.equal(project('PRIVATE http://user:secret@example.invalid').failureCode,'VENDOR_TURN_FAILED');assert.ok(!JSON.stringify(project('PRIVATE')).includes('PRIVATE'));
+});

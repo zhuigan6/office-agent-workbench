@@ -1,7 +1,7 @@
 # Standalone architecture
 
-The confirmed first-release selection/native editing and agent entrypoint gates
-are specified in AGENT-INTEGRATION.md. CLI and MCP share one document broker;
+The current remaining tasks and priorities are specified in V2-PLAN.md; the
+entrypoint design is detailed in AGENT-INTEGRATION.md. CLI and MCP share one document broker;
 session protocols, not MCP alone, carry full public chat continuity.
 
 Windows first, one local HTTPS host and shared SQLite-backed state. This is not
@@ -160,3 +160,57 @@ in addition to the selection revision. Specialized/list/table/embedded content s
 explicitly unsupported until a suitable object-family workflow is implemented.
 Representative single/two-paragraph tasks passed real Office and real MCP recovery.
 The wrapper itself does not close table/image/chart or Codex dual-entry gaps.
+
+## Document preview and control reference, 2026-10-03
+
+Official OpenAI documentation describes selecting/annotating a supported file
+preview as context for a focused revision, not proof of updating an unsaved desktop
+Office document: [Work with files](https://learn.chatgpt.com/docs/artifacts-viewer).
+The local Codex Document Control tool contract separately exposes session discovery,
+surface/tool/version schema lookup and a caller-stable idempotency key per command.
+Read-only discovery this date returned no connected sessions. No execution was
+attempted; concrete schemas, Office integration internals and arbitrary external
+client access therefore remain unverified. A null open-Page snapshot is not a
+desktop Office observation. Do not infer a reusable public SDK from tool exposure.
+
+Fresh read-only discovery on this development turn also returned zero sessions;
+no concrete schema or command was requested without a connected target. The current
+[official file workflow](https://help.openai.com/en/articles/20001278-creating-and-editing-documents-spreadsheets-and-presentations-with-chatgpt-work)
+separately describes preview selection/annotation and direct open-Excel control via
+an add-in. This supports separating preview anchors from live Office anchors, not
+claiming the desktop preview itself controls Word/PPT unsaved documents.
+
+2026-10-06 recheck: the actual Codex Document Control discovery again returned
+zero connected sessions even though desktop Excel was running. Its exposed tool
+contract still requires exact executor session, surface/tool/version lookup and
+stable logical command identity. No concrete schema or edit was attempted without
+a connected target. Current official Work documentation still separates sidebar
+file selection/refinement from open-workbook control through ChatGPT for Excel;
+the latter is explicitly Excel-only in that documented flow. This confirms the
+interaction reference, not a public reusable engine or proof of Word/PPT internals.
+Do not add the official add-in as a requirement for our native connector.
+
+Reuse the interaction principles, not undocumented proprietary internals:
+visible selected target, a short scoped request, capability-specific help and stable
+command identity. Preview annotations and native Office selection are different
+anchor sources. Preview coordinates/text must be resolved to an explicit document
+object/version before a live edit, never treated as permission to replay against the
+current window. Keep the original OfficeCLI file engine and current native connector;
+a preview cannot substitute for live readback, and screenshots are not the edit API.
+
+Embedded Excel charts now follow that same pattern: discover a bounded object list,
+resolve a complete chart or explicit chartName, capture its document/sheet/window/
+native shape ID and revision, then compose geometry properties through the existing
+queue and recovery journal. Chart title/series/axis selection cannot implicitly
+expand to the container. Actual repeated ChartObject lookups returned different
+IUnknown proxy addresses but the same Shape.ID; therefore chart identity is NOT a
+COM pointer. Same-name deletion/recreation produced a new ID and the old reference
+was refused. Revision covers geometry and inspected type/title/series formulas,
+not all chart formatting or source values. Only geometry is written/restored.
+
+Both managed and shared native message entrances now use selection-context.ts so
+they describe the same shipped operations. Complete ordinary Word tables have a
+typed table reference distinct from a partial cell/range. The selection wrapper
+resolves that frozen reference and reuses table-batch/layout/rows; only a verified
+result plus matching native readback advances it. It creates no second table engine
+or permission system. Partial cells cannot obtain whole-table mutation authority.

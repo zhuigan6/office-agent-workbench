@@ -10,7 +10,10 @@ export async function connectCodexWebSocket(endpoint:string,token:string){
     !/^[A-Za-z0-9_-]{32,512}$/.test(token))throw new AppError('NATIVE_REMOTE_SCOPE','Use an explicitly authenticated loopback app server.');
   const socket=new WebSocket(endpoint,{headers:{Authorization:'Bearer '+token},maxPayload:8*1024*1024,handshakeTimeout:5000,followRedirects:false});
   await new Promise<void>((resolve,reject)=>{
-    const fail=()=>{socket.terminate();reject(new AppError('NATIVE_REMOTE_CONNECTION','Authenticated app-server connection failed.'));};
+    const fail=(error:NodeJS.ErrnoException)=>{
+      const reason=/Unexpected server response: (401|403)\b/.test(error.message)?'AUTH_REJECTED':error.code==='ECONNREFUSED'?'CONNECTION_REFUSED':/timed out/i.test(error.message)?'HANDSHAKE_TIMEOUT':'HANDSHAKE_FAILED';
+      socket.terminate();reject(new AppError('NATIVE_REMOTE_CONNECTION',`Authenticated app-server connection failed (code=${reason}).`));
+    };
     socket.once('error',fail);
     socket.once('open',()=>{socket.off('error',fail);resolve();});
   });

@@ -1,7 +1,8 @@
 import {z} from 'zod';
 import {selectionSchema} from './selection.ts';
 export const wordReplaceSchema=z.object({operationId:z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),selection:selectionSchema,text:z.string().max(2000)}).strict().superRefine((v,c)=>{
-  if(v.selection.kind!=='word'||v.selection.storyType!==1||v.selection.end<=v.selection.start||v.selection.end-v.selection.start>2000)c.addIssue({code:'custom',message:'Select 1 to 2000 main-body Word characters.'});
+  if(v.selection.kind!=='word'||v.selection.storyType!==1||v.selection.end<v.selection.start||v.selection.end-v.selection.start>2000)c.addIssue({code:'custom',message:'Use a Word body caret or select at most 2000 main-body characters.'});
+  if(v.selection.kind==='word'&&v.selection.end===v.selection.start&&!v.text.length)c.addIssue({code:'custom',message:'Caret insertion needs nonempty text; ordinary table cells retain the existing table scope checks.'});
   if(/[\u0000-\u001f\u2028\u2029]/.test(v.text))c.addIssue({code:'custom',message:'Paragraph and structural controls need a separate operation.'});
 });
 export interface TextSplice{start:number;end:number;text:string}

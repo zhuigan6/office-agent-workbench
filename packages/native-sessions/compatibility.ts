@@ -51,6 +51,7 @@ export function inspectCodexProtocol(bundle: CodexSchemaBundle) {
   };
   const initialize = check('initialize', ['clientInfo', 'capabilities']);
   const resume = check('thread/resume', ['threadId']);
+  const read = check('thread/read', ['threadId', 'includeTurns']);
   const queue = check('thread/queue/add', ['threadId', 'clientUserMessageId', 'input']);
   const queueObject = resolve(bundle.queueResponse, bundle.queueResponse.properties?.queuedSubmission);
   const receipt = ['id', 'clientUserMessageId'].every(field => resolve(bundle.queueResponse, queueObject?.properties?.[field])?.type === 'string');
@@ -62,8 +63,12 @@ export function inspectCodexProtocol(bundle: CodexSchemaBundle) {
     return valid;
   });
   const digest = createHash('sha256').update(JSON.stringify(bundle)).digest('hex');
-  return { fingerprint: digest, sessionRead: initialize && resume, queuedSend: initialize && queue && receipt, publicEvents: events,
-    compatibleShape: initialize && resume && queue && receipt && events, reasons };
+  const optional=(method:string,fields:string[])=>{
+    const params=requests.get(method);return Boolean(params&&fields.every(field=>Object.hasOwn(params.properties??{},field))&&(params.required??[]).every((field:string)=>fields.includes(field)));
+  };
+  const cancellationShape=optional('turn/interrupt',['threadId','turnId'])&&optional('thread/queue/list',['threadId','limit'])&&optional('thread/queue/start',['threadId','queuedSubmissionId']);
+  return { fingerprint: digest, sessionRead: initialize && resume && read, queuedSend: initialize && queue && receipt, publicEvents: events,
+    compatibleShape: initialize && resume && read && queue && receipt && events, cancellationShape, reasons };
 }
 
 export function compatibilityState(vendor: keyof typeof nativeBaselines, version: string, evidence?: {

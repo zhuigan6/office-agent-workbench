@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'word-readonly.ps1')
 function Read-WordReplacement($entry,$selection){
     if($entry.kind -ne 'word' -or [int]$selection.storyType -ne 1){throw 'WORD_BODY_REQUIRED'}
     $null=Assert-SelectionIdentity $entry $selection
@@ -5,7 +6,8 @@ function Read-WordReplacement($entry,$selection){
     if($start -lt 0 -or $end -lt $start -or $end-$start -gt 2000 -or $end -gt $entry.doc.Content.End){throw 'WORD_RANGE_LIMIT'}
     $range=$entry.doc.Range($start,$end);$text=[string]$range.Text;$xml=[string]$range.WordOpenXML
     if($xml.Length -gt 1048576 -or $text -match '[\x00-\x1f\u2028\u2029]'){throw 'WORD_STRUCTURAL_RANGE'}
-    if($range.Tables.Count -gt 0 -or $range.Fields.Count -gt 0 -or $range.ContentControls.Count -gt 0 -or $range.Revisions.Count -gt 0 -or $range.InlineShapes.Count -gt 0 -or $range.Hyperlinks.Count -gt 0){throw 'WORD_SPECIAL_CONTENT'}
+    $table=if($range.Tables.Count -gt 0){Read-WordTableSnapshot $entry $range}else{$null}
+    if($range.Fields.Count -gt 0 -or $range.ContentControls.Count -gt 0 -or $range.Revisions.Count -gt 0 -or $range.InlineShapes.Count -gt 0 -or $range.Hyperlinks.Count -gt 0){throw 'WORD_SPECIAL_CONTENT'}
     if($xml -match '<w:(drawing|object|pict|fldChar|fldSimple|instrText|sdt|ins|del|moveFrom|moveTo|footnoteReference|endnoteReference|commentRangeStart|bookmarkStart|hyperlink|oMath|altChunk)\b'){throw 'WORD_SPECIAL_CONTENT'}
     $documentText=[string]$entry.doc.Content.Text
     if($documentText.Length -gt 1048576){throw 'WORD_DOCUMENT_LIMIT'}
@@ -15,17 +17,21 @@ function Read-WordReplacement($entry,$selection){
     if($paragraphXml.Length -gt 1048576){throw 'WORD_PARAGRAPH_LIMIT'}
     $paragraphState=@{start=[int]$paragraph.Start;end=[int]$paragraph.End;text=[string]$paragraph.Text;xml=$paragraphXml;contentHash=(Hash-Text (Get-WordSemanticXml $paragraphXml))}
     $hash=Hash-Text ([string]$range.Start+'|'+$range.End+'|'+$documentText+'|'+(Get-WordSemanticXml $xml))
-    return @{selection=$selection;text=$text;xml=$xml;contentHash=$hash;documentHash=(Hash-Text $documentText);paragraph=$paragraphState}
+    return @{selection=$selection;text=$text;xml=$xml;contentHash=$hash;documentHash=(Hash-Text $documentText);paragraph=$paragraphState;table=$table}
 }
 function Write-WordReplacement($entry,$data){
-    if($entry.doc.ReadOnly -or $entry.doc.ProtectionType -ne -1 -or $entry.doc.TrackRevisions){return @{notIssued=$true;verified=$false;code='WORD_PROTECTED_OR_TRACKED'}}
+    if((Get-WordWriteRestriction $entry.doc) -or $entry.doc.TrackRevisions){return @{notIssued=$true;verified=$false;code='WORD_PROTECTED_OR_TRACKED'}}
     $before=Read-WordReplacement $entry $data.selection
     if($before.contentHash -cne [string]$data.expectedFingerprint){return @{verified=$false;code='REVISION_CONFLICT'}}
     $beforeDocument=[string]$entry.doc.Content.Text
     $base=[int]$data.selection.start;$end=[int]$data.selection.end
+    $prefix=[string]$entry.doc.Range(0,$base).Text;$suffix=[string]$entry.doc.Range($end,[int]$entry.doc.Content.End).Text
     $text=[string]$data.text
     if($text.Length -gt 2000 -or $text -match '[\x00-\x1f\u2028\u2029]'){throw 'WORD_TEXT_LIMIT'}
-    if($data.restoreParagraph){
+    if($data.restoreTable){
+        if(-not $before.table -or $before.table.contentHash -cne [string]$data.expectedTableHash){return @{verified=$false;code='REVISION_CONFLICT'}}
+        Restore-WordTableSnapshot $entry $before.table $data.restoreTable ([string]$data.expectedTableHash)
+    }elseif($data.restoreParagraph){
         # Restore a complete paragraph including its mark, not partial package XML.
         # The whole paragraph must still match the verified post-edit snapshot.
         if($before.paragraph.contentHash -cne [string]$data.expectedParagraphHash -or $before.paragraph.start -ne $data.restoreParagraph.start){return @{verified=$false;code='REVISION_CONFLICT'}}
@@ -49,8 +55,9 @@ function Write-WordReplacement($entry,$data){
     }
     $target=@{kind='word';documentId=$data.selection.documentId;hostSessionId=$data.selection.hostSessionId;storyType=1;start=$base;end=$base+$text.Length;preview=$text;contentHash=''}
     $after=Read-WordReplacement $entry $target;$target.contentHash=$after.contentHash
-    $expectedDocument=$beforeDocument.Substring(0,$base)+$text+$beforeDocument.Substring($end)
+    $expectedDocument=$prefix+$text+$suffix
     $verified=$after.text -ceq $text -and $after.documentHash -ceq (Hash-Text $expectedDocument)
     if($data.restoreParagraph -and $after.paragraph.contentHash -cne [string]$data.restoreParagraph.contentHash){$verified=$false}
+    if($data.restoreTable -and $after.table.contentHash -cne [string]$data.restoreTable.contentHash){$verified=$false}
     return @{before=$before;after=$after;verified=$verified;revision=$after.contentHash;code=$(if($verified){'VERIFIED'}else{'READBACK_MISMATCH'})}
 }

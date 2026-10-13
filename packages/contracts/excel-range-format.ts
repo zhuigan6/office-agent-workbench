@@ -1,0 +1,6 @@
+import {z} from 'zod';
+import {rangeDimensions} from './index.ts';
+const color=z.string().regex(/^#[0-9A-Fa-f]{6}$/);
+export const excelRangeFormatReferenceSchema=z.object({sheet:z.string().min(1).max(150),range:z.string().min(1).max(30),hostSessionId:z.string().min(1).max(200),dataRevision:z.string().regex(/^[a-f0-9]{64}$/),revision:z.string().regex(/^[a-f0-9]{64}$/)}).strict().superRefine((v,c)=>{try{const d=rangeDimensions(v.range);if(d.rows*d.columns>200)throw Error();}catch{c.addIssue({code:'custom',message:'Use one ordinary rectangle of at most200 cells.'});}});
+export const excelRangeFormatPropertiesSchema=z.object({font:z.object({bold:z.boolean().optional(),italic:z.boolean().optional(),color:color.optional()}).strict().refine(v=>Object.keys(v).length>0).optional(),fill:z.union([color,z.literal('none')]).optional(),horizontal:z.enum(['general','left','center','right','justify']).optional(),vertical:z.enum(['top','center','bottom']).optional()}).strict().refine(v=>Object.keys(v).length>0,'Supply at least one appearance property.');
+export const excelRangeFormatSchema=z.object({operationId:z.string().regex(/^[A-Za-z0-9_-]{1,100}$/),reference:excelRangeFormatReferenceSchema,properties:excelRangeFormatPropertiesSchema}).strict();

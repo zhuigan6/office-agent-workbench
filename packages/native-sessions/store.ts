@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { AppError, canonical } from '../contracts/index.ts';
+import type {ReconciliationPlan} from './reconciliation.ts';
 import {
   NATIVE_SESSION_LIMITS, nativeIdSchema, nativeLinkSchema, nativeOwnerSchema, nativeSourceSchema,
   nativeMessageSchema, nativePublicEventSchema, nativeReplaySchema, parseNative, sanitizeNativeData,
@@ -123,6 +124,38 @@ export class NativeSessionStore {
     return Boolean(this.db.prepare(`SELECT id FROM native_session_messages WHERE link=? AND json_extract(body,'$.state') IN (${placeholders}) LIMIT 1`).get(linkId, ...states));
   }
 
+  pendingMessages(linkId:string,principalId:string){
+    this.load(linkId,principalId);
+    const rows=this.db.prepare("SELECT id FROM native_session_messages WHERE link=? AND json_extract(body,'$.state') IN ('queued','accepted','unknown') ORDER BY rowid LIMIT 1001").all(linkId);
+    if(rows.length>1000)throw new AppError('NATIVE_RPC_LIMIT','Too many unresolved messages for one reconciliation.',409);
+    return rows.map(row=>this.message(linkId,principalId,String(row.id)));
+  }
+
+  /** Trusted manager supplies verified offline RPC evidence; this is not a client override. */
+  reconcileOffline(linkId:string,principalId:string,expected:NativeSessionLink,messages:NativeOutboundMessage[],plan:ReconciliationPlan){
+    if(!plan.ready)throw new AppError('NATIVE_RECONCILIATION_BLOCKED',plan.reason,409);
+    return this.transaction(()=>{
+      const link=this.get(linkId,principalId);
+      if(canonical(link)!==canonical(expected)||canonical(this.pendingMessages(linkId,principalId))!==canonical(messages))throw new AppError('NATIVE_STATE_CONFLICT','State changed while verifying the original session.',409);
+      this.source(link,{vendor:'codex',vendorSessionId:expected.vendorSessionId});
+      if(plan.outcomes.length!==messages.length||new Set(plan.outcomes.map(o=>o.messageId)).size!==messages.length)throw new AppError('NATIVE_STATE_CONFLICT','Reconciliation does not cover every unresolved message.',409);
+      for(const outcome of plan.outcomes){
+        const message=messages.find(m=>m.messageId===outcome.messageId);
+        if(!message||!['accepted','unknown'].includes(message.state)||!['completed','interrupted'].includes(outcome.state))throw new AppError('NATIVE_STATE_CONFLICT','Invalid reconciled message transition.',409);
+        this.saveMessage(linkId,{...message,state:outcome.state,updatedAt:this.now()});
+      }
+      for(const input of plan.events){
+        const event=parseNative(nativePublicEventSchema,input);this.source(link,{vendor:event.vendor,vendorSessionId:event.vendorSessionId});
+        if(!['turn.started','turn.completed','turn.outcome','user.text','assistant.text'].includes(event.kind))throw new AppError('NATIVE_INVALID_INPUT','Only confirmed public history is reconciled.');
+        const body=canonical(event),row=this.db.prepare('SELECT body FROM native_session_events WHERE vendor=? AND session=? AND event_id=?').get(event.vendor,event.vendorSessionId,event.vendorEventId);
+        if(row){if(row.body!==body)throw new AppError('NATIVE_ID_REUSED','Existing public event differs from vendor evidence.',409);}
+        else this.db.prepare('INSERT INTO native_session_events(link,vendor,session,event_id,body) VALUES(?,?,?,?,?)').run(linkId,event.vendor,event.vendorSessionId,event.vendorEventId,body);
+      }
+      parseNative(epochSchema,link.ownerEpoch);link.ownerEpoch++;link.owner=null;link.activeTurnId=null;this.save(link);
+      return link;
+    });
+  }
+
   acquire(linkId: string, principalId: string, expectedEpoch: number, ownerId: string, launchId: string, leaseMs: number): NativeSessionLink {
     parseNative(epochSchema, expectedEpoch); parseNative(nativeIdSchema, ownerId); parseNative(nativeIdSchema, launchId); parseNative(leaseSchema, leaseMs);
     return this.transaction(() => {
@@ -210,12 +243,12 @@ export class NativeSessionStore {
   }
 
   recordOutcome(linkId: string, principalId: string, owner: NativeOwner, source: NativeSource, messageId: string,
-    state: 'accepted' | 'completed' | 'unknown', vendorRequestId: string): NativeOutboundMessage {
-    parseNative(z.enum(['accepted', 'completed', 'unknown']), state); parseNative(nativeIdSchema, vendorRequestId);
+    state: 'accepted' | 'completed' | 'unknown' | 'interrupted' | 'cancelled', vendorRequestId: string): NativeOutboundMessage {
+    parseNative(z.enum(['accepted', 'completed', 'unknown', 'interrupted', 'cancelled']), state); parseNative(nativeIdSchema, vendorRequestId);
     return this.transaction(() => {
       const link = this.load(linkId, principalId); this.owner(link, owner); this.source(link, source);
       const message = this.message(linkId, principalId, messageId);
-      if (message.state === 'queued' || (message.state === 'completed' && state !== 'completed'))
+      if (message.state === 'queued' || (['interrupted','cancelled'].includes(message.state)&&state!==message.state) || (message.state === 'completed' && state !== 'completed'))
         throw new AppError('NATIVE_STATE_CONFLICT', 'Invalid outbound message transition.', 409);
       if (!message.execution || canonical(message.execution) !== canonical(owner))
         throw new AppError('NATIVE_OWNER_CONFLICT', 'This dispatch belongs to another execution epoch; explicit reconciliation is required.', 409);

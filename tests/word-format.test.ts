@@ -16,6 +16,7 @@ test('Word paragraph properties compose with fonts without accepting arbitrary C
   const input={selection,operationId:'paragraph',paragraph:{alignment:'center',spaceBefore:6,spaceAfter:8,leftIndent:12,firstLineIndent:-6,keepWithNext:true,keepTogether:false}};
   assert.doesNotThrow(()=>wordFormatSchema.parse(input));
   assert.doesNotThrow(()=>wordFormatSchema.parse({...input,font:{bold:true,size:14}}));
+  assert.doesNotThrow(()=>wordFormatSchema.parse({...input,paragraph:{style:'heading1',alignment:'center'},font:{size:18}}));
   assert.throws(()=>wordFormatSchema.parse({selection,operationId:'empty'}));
   for(const paragraph of [{},{alignment:'distributed'},{spaceAfter:-1},{firstLineIndent:-1585},{spaceBefore:Infinity},{keepWithNext:1},{style:'Heading 1'},{COM:'Save'}])
     assert.throws(()=>wordFormatSchema.parse({...input,paragraph}));

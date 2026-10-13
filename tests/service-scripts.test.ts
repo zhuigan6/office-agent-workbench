@@ -11,6 +11,15 @@ const parseScripts = [...scripts,'Initialize-Local.ps1','Protect-Data.ps1','Rene
 const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 const windows = process.platform === 'win32';
 
+test('certificate check-only exits before offline guard and all renewal mutations',()=>{
+  const content=fs.readFileSync(path.join(root,'scripts','Renew-Certificate.ps1'),'utf8');
+  const start=content.indexOf('if ($CheckOnly)'),end=content.indexOf("Stop Workbench with Stop-Service.ps1");
+  assert.ok(start>=0&&end>start);const check=content.slice(start,end);
+  assert.match(check,/OpenFlags\]::ReadOnly/);assert.match(check,/ChangesMade=\$false/);assert.match(check,/return/);
+  assert.doesNotMatch(check,/New-SelfSignedCertificate|New-Item|Copy-Item|Import-Certificate|Export-Certificate|WriteAllText|Start-ScheduledTask|Stop-ScheduledTask/);
+  assert.ok(content.indexOf('New-SelfSignedCertificate')>end);
+});
+
 // Only library functions are loaded. All service/config/network mutations are mocked.
 function runPS(body: string) {
   const load = scripts.map(name => `. ${psQuote(path.join(root, 'scripts', name))}`).join('\n');

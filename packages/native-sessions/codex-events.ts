@@ -16,10 +16,14 @@ export function codexPublicEvents(sessionId: string, notification: CodexNotifica
   const base = { vendor: 'codex' as const, vendorSessionId: sessionId };
   if (notification.method.startsWith('turn/')) {
     const turn = parseNative(z.object({ id: nativeIdSchema }).passthrough(), params.turn);
-    return [parseNative(nativePublicEventSchema, {
+    const completed=parseNative(nativePublicEventSchema, {
       ...base, vendorEventId: id([sessionId, notification.method, turn.id]),
       kind: notification.method === 'turn/started' ? 'turn.started' : 'turn.completed', turnId: turn.id,
-    })];
+    });
+    // Keep legacy event identity/body stable; append outcome as a separate public
+    // observation so old histories need no rewrite or silent success assumption.
+    if(notification.method==='turn/completed'&&['completed','failed','interrupted'].includes(turn.status as string))return [completed,parseNative(nativePublicEventSchema,{...base,vendorEventId:id([sessionId,'turn/outcome',turn.id]),kind:'turn.outcome',turnId:turn.id,status:turn.status,...(turn.status==='failed'?{failureCode:(turn.error as any)?.message==='workspace routing discovery timed out'?'WORKSPACE_ROUTING_TIMEOUT':'VENDOR_TURN_FAILED'}:{})})];
+    return [completed];
   }
   const item = parseNative(itemSchema, params.item);
   const eventId = (phase: string) => id([sessionId, params.turnId ?? '', item.id, phase]);

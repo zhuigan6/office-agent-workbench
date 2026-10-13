@@ -1,5 +1,29 @@
 # Local review readiness, 2026-09-30
 
+Current checkpoint 2026-10-13 (supersedes stale missing-feature assertions in the
+historical sections below): shared Codex document/normal and proved abnormal
+resume branches are accepted; bounded Word/Excel/PPT rich workflows and actual
+model/UI recovery have evidence in V2-PLAN.md/CAPABILITIES.md. Real independent
+Excel and observed readonly Word acceptance passed; the readonly COM mismatch was
+fixed and activated. M2 broader mixed-source/lifecycle remains; M3 has a stronger
+three-format planning/file benchmark but not a complete interactive agent/cost
+comparison or all runner acceptance. M4 certificate diagnostics are accepted;
+updated assembled-package and cross-machine/reboot acceptance remain separate.
+Managed Claude document/parameter-visible approvals and same vendor UUID restart
+continuation are now accepted through original Core adapter. Event disconnect
+invalidates stale parameters, keeps conflicts, reconnects one owned observer;
+actual current-host reconnect and251-message restart retention accepted. Source387
+tests/typecheck/build passed; existing372-test candidate package predates these
+updates. Native Claude CLI inventory/attach help was inspected on both installed
+versions but full TUI sharing is NOT accepted. Previous frozen-package actual
+upgrade/rollback/startup is accepted for that package only; do not reset it as
+unstarted work or claim it covers current source. No new version publication is
+implied by this V2 runtime update.
+
+NEXT-VERSION EXECUTION: V2-PLAN.md is the current task/priority/acceptance map.
+Alpha.2 is published. This document retains the original four workstreams and
+historical gates; it must not be interpreted as resetting completed capabilities.
+
 PUBLICATION SCOPE UPDATE: the user subsequently authorized publishing the useful
 current preview and deferring unfinished large blocks. RELEASE-SCOPE.md is the
 current public release boundary and supersedes the mandatory-first-release gate
@@ -48,13 +72,13 @@ identity and Codex dual-entry session continuity are confirmed FIRST
 RELEASE requirements. They are not optional cuts awaiting user approval.
 See AGENT-INTEGRATION.md. Macros/OCR/user PPT Skills move to the second release.
 User decision 2026-09-30: Claude independent-session adaptation also moves to
-second release; existing managed Claude capabilities are retained. Other core
-Office/Codex requirements have not been reduced.
+second release; existing managed Claude capabilities are retained. The subsequent
+publication decision explicitly deferred remaining core Office/Codex implementation
+to the next-version plan.
 
-This is a working local alpha candidate, NOT a published or universally complete
-Office platform. The user requires a factual joint review before deciding the
-first local final version and GitHub publication. No public repository, tag or
-Release is created by the preparation scripts.
+Alpha.2 is published as a preview with the limits in RELEASE-SCOPE.md. Remaining
+work and subsequent release acceptance are specified in V2-PLAN.md. Preparation
+scripts still do not independently create repositories, tags or Releases.
 
 ## Evidence already available
 
@@ -107,9 +131,9 @@ to model file tools. Do not grant global shell/configuration authority just to
 advertise all upstream commands. Rich native support must retain conflict and
 recovery guarantees. Refer to CAPABILITIES.md for each tested boundary.
 
-## Joint decisions before naming a first final version
+## Joint decisions for subsequent releases
 
-Do not reopen the confirmed first-release gates as optional reductions. Review the actual document selection,
+Use V2-PLAN.md to select and verify the next delivered milestone. Review the actual document selection,
 approvals, previews, version downloads and recovery experience. Decide repository
 name/public positioning through agent-led preparation and final joint acceptance. Existing code
 and data stay intact; there is no proposal to restart architecture or discard chats.

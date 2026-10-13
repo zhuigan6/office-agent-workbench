@@ -20,7 +20,7 @@ test('original RPC works over authenticated text frames; sockets close without r
   const endpoint='ws://127.0.0.1:'+(server.address() as any).port;
   let connection:Awaited<ReturnType<typeof connectCodexWebSocket>>|undefined;
   try{
-    await assert.rejects(connectCodexWebSocket(endpoint,'c'.repeat(32)),error=>error instanceof Error&&!error.message.includes(token));
+    await assert.rejects(connectCodexWebSocket(endpoint,'c'.repeat(32)),error=>error instanceof Error&&error.message.includes('code=AUTH_REJECTED')&&!error.message.includes(token));
     connection=await connectCodexWebSocket(endpoint,token);await connection.rpc.initialize();
     assert.deepEqual(await connection.rpc.request('model/list',{}),{data:[]});assert.equal(requests,2);
     await connection.close();await assert.rejects(connection.rpc.request('model/list',{}));assert.equal(requests,2);

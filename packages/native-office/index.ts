@@ -9,8 +9,9 @@ import {revision} from '../document-workspace/store.ts';
 import {selectionSchema,type CapturedSelection} from '../contracts/selection.ts';
 import {targetSchema} from '../contracts/target.ts';
 import {DocumentBroker,type Host} from '../document-workspace/broker.ts';
+import {nativeExcelMatrixMatches} from '../contracts/native-excel-values.ts';
 
-interface NativeDocument {id:string;kind:DocumentBinding['kind'];name:string;location:string;capabilities:string[];saved:boolean;sessionId:string;windowIds?:string[];instanceId?:string;processId?:number;discoverySource?:string}
+interface NativeDocument {id:string;kind:DocumentBinding['kind'];name:string;location:string;capabilities:string[];saved:boolean;sessionId:string;windowIds?:string[];instanceId?:string;processId?:number;discoverySource?:string;writeRestriction?:string|null}
 export class NativeOffice {
   child?:ChildProcessWithoutNullStreams;
   pending=new Map<string,{resolve:(v:any)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
@@ -69,21 +70,27 @@ export class NativeOffice {
   host(doc:NativeDocument):Host{
     const binding:DocumentBinding={documentId:this.id(doc),hostSessionId:doc.sessionId,name:doc.name,kind:doc.kind,capabilities:doc.capabilities,lastSeen:Date.now()};
     return {binding,request:async(method,input:any)=>{
-      if(method==='readPptFormat'||method==='writePptFormat'||method==='readPptLayout'||method==='writePptLayout'||method==='readPptShapes'){
+      if(method==='readPptFormat'||method==='writePptFormat'||method==='readPptLayout'||method==='writePptLayout'||method==='readPptShapes'||method==='readPptReplacement'||method==='writePptReplacement'||method==='writePptRichFormat'){
         if(doc.kind!=='powerpoint')throw new AppError('HOST_KIND','PowerPoint is required.');
         return this.call(method,doc.id,input);
       }
-      if(method==='readWordFormat'||method==='writeWordFormat'||method==='readWordReplacement'||method==='writeWordReplacement'){
+      if(method==='readWordFormat'||method==='writeWordFormat'||method==='readWordReplacement'||method==='writeWordReplacement'||method==='readWordTables'||method==='readWordTableSelection'||method==='readWordBatchCell'||method==='readWordTableLayout'||method==='writeWordTableLayout'||method==='readWordParagraphBatch'||method==='writeWordTableRows'){
         if(doc.kind!=='word')throw new AppError('HOST_KIND','Word is required.');
         return this.call(method,doc.id,input);
       }
       if(method==='read'){rangeDimensions(input.range);return this.call('read',doc.id,input);}
+      if(['readExcelTableColumns','writeExcelTableColumns'].includes(method)){if(doc.kind!=='excel')throw new AppError('HOST_KIND','Excel is required.');return this.call(method,doc.id,input);}
+      if(['readExcelTableCreate','writeExcelTableCreate','removeExcelCreatedTable','readExcelTailProbe','readExcelTablePackage'].includes(method)){if(doc.kind!=='excel')throw new AppError('HOST_KIND','Excel is required.');return this.call(method,doc.id,input);}
+      if(['readExcelRangeFormat','writeExcelRangeFormat'].includes(method)){if(doc.kind!=='excel')throw new AppError('HOST_KIND','Excel is required.');return this.call(method,doc.id,input);}
+      if(['readExcelChartCreate','writeExcelChartCreate','removeExcelCreatedChart','readExcelCharts','readExcelChart','readExcelChartPackage','readExcelChartFormat','writeExcelChartLayout','readExcelSheets','readExcelTables','readExcelTable','writeExcelTableStyle','readExcelTableAppend','writeExcelTableRows'].includes(method)){
+        if(doc.kind!=='excel')throw new AppError('HOST_KIND','Excel is required.');return this.call(method,doc.id,input);
+      }
       if(method==='write'){
         const {before,...raw}=input;const edit=validateWrite(raw);const result=await this.call('write',doc.id,{...edit,before});
         if(result.code==='REVISION_CONFLICT')return result;
         if(result.notIssued===true)return result;
         const after:RangeState=result.after;
-        const verified=(!edit.values||canonical(edit.values)===canonical(after.values))&&(!edit.formulas||canonical(edit.formulas)===canonical(after.formulas))&&(!edit.numberFormat||canonical(edit.numberFormat)===canonical(after.numberFormat));
+        const verified=(!edit.values||nativeExcelMatrixMatches(edit.values,after.values))&&(!edit.formulas||nativeExcelMatrixMatches(edit.formulas,after.formulas,true))&&(!edit.numberFormat||canonical(edit.numberFormat)===canonical(after.numberFormat));
         return {...result,verified,revision:revision(after),code:verified?'VERIFIED':'READBACK_MISMATCH',transport:'native-office'};
       }
       if(method==='readText'){
@@ -117,7 +124,7 @@ export class NativeOffice {
     for(const saved of broker.store.documents().filter(d=>d.documentId.startsWith('native:'))){
       const current=broker.hosts.get(saved.documentId),doc=live.get(saved.documentId);
       if(!doc){if(current)broker.detach(current);continue;}
-      if(!current||current.binding.hostSessionId!==doc.sessionId){if(current)broker.detach(current);broker.attach(this.host(doc));}
+      if(!current||current.binding.hostSessionId!==doc.sessionId||canonical([...current.binding.capabilities].sort())!==canonical([...doc.capabilities].sort())){if(current)broker.detach(current);broker.attach(this.host(doc));}
     }
     return result;
   }
